@@ -1,0 +1,24 @@
+# environments / caches
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# app-generated copies of delivered files
+Claude outputs/
+# run artefacts: keep RUNLOG/REPORT/results.json/summary.png, drop weights, states, logs, big arrays
+runs/**/*.pt
+runs/**/*.npz
+runs/**/*.npy
+runs/*.log
+runs/**/*.log
+*.npy
+*.npz
+*.bigfile
+# LaTeX build files
+notes/*.aux
+notes/*.log
+notes/*.out
+notes/*.toc
+notes/*.fls
+notes/*.fdb_latexmk
+notes/*.synctex.gz

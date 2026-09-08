@@ -1,0 +1,576 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,bm}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{microtype}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black}
+
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}[proposition]{Lemma}
+\newtheorem{corollary}[proposition]{Corollary}
+\newtheorem{theorem}[proposition]{Theorem}
+\theoremstyle{definition}
+\newtheorem{definition}[proposition]{Definition}
+\newtheorem{remark}[proposition]{Remark}
+\newtheorem{exercise}[proposition]{Exercise}
+
+\newcommand{\q}{\mathbf{q}}
+\newcommand{\x}{\mathbf{x}}
+\newcommand{\kk}{\mathbf{k}}
+\newcommand{\Psic}{\Psi_{c}}
+\newcommand{\Psif}{\Psi_{f}}
+\newcommand{\PW}{\mathcal{P}_W}
+\newcommand{\Bf}{\mathcal{B}_f}
+\newcommand{\Bc}{\mathcal{B}_c}
+\newcommand{\BW}{\mathcal{B}_W}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Ny}{{\rm Ny}}
+\newcommand{\lin}{{\rm lin}}
+\newcommand{\Zel}{\mathcal{Z}}
+\newcommand{\Nbody}{\mathcal{S}}
+
+\title{Progressive $2\times$ super-resolution of Lagrangian $N$-body fields:\\ a self-contained derivation of the ``octave flow'' method}
+\author{Notes prepared for Xiaowen Zhang}
+\date{September 8, 2026 (v2, revised after review)}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent These notes derive, from first principles, every mathematical statement behind the method implemented in \texttt{phase0\_octaves.py} and \texttt{octave\_flow\_toy.py}: the Lagrangian multi-resolution setup with nested initial conditions; the restriction/prolongation pair $(R,P)$ and the resulting orthogonal decomposition of a fine field into a coarse part and a detail part; the linear-theory statements (the coarse correction vanishes at first order, the detail is an independent Gaussian, the dimension of the new randomness); the second-order Lagrangian perturbation theory (2LPT) split that gives the $k^{2}$/$k^{4}$ suppression of the coarse correction and shows that the octave couples to the coarse field through its deformation tensor; the exact push-forward and Markov properties of the conditional distribution; the conditional flow-matching theory, including why the physical coupling is admissible and why one-step regression loses power; the scale-free self-similarity used for weight sharing; and the evaluation metrics. Exercises mark the places where you may want to redo the algebra yourself.
+\end{abstract}
+
+\tableofcontents
+
+%======================================================================
+\section{Setting and conventions}
+%======================================================================
+
+\subsection{Lagrangian fields on nested grids}
+
+The simulation box is the torus $\mathbb{T}^3=[0,L)^3$ with periodic boundary conditions. A resolution level $\ell$ has $N_\ell$ particles per dimension, grid spacing $h_\ell=L/N_\ell$, and Lagrangian grid
+\begin{equation}
+\Lambda_\ell=\{\q_{\mathbf i}=(\mathbf i+o\,\mathbf 1)\,h_\ell:\ \mathbf i\in\{0,\dots,N_\ell-1\}^3\},\qquad o\in\{0,\tfrac12\},
+\end{equation}
+where $o$ is the grid offset used by the initial-condition generator. Two successive levels satisfy $N_{\ell+1}=2N_\ell$, $h_{\ell+1}=h_\ell/2$. In what follows a generic pair of levels is called coarse ($c$) and fine ($f$).
+
+A particle that starts at $\q$ is at $\x(\q,t)=\q+\Psi(\q,t)$ at time $t$. The displacement $\Psi:\Lambda_\ell\to\R^3$ (and the velocity $\mathbf v$) are the objects we super-resolve. They are stored as three-channel cubes; all of the analysis treats them as periodic vector fields sampled on $\Lambda_\ell$.
+
+\subsection{Fourier conventions}
+
+For a periodic function $g$ on the torus,
+\begin{equation}
+\hat g(\kk)=\int_{\mathbb T^3} g(\q)\,e^{-i\kk\cdot\q}\,\dd^3q,\qquad g(\q)=\frac{1}{L^3}\sum_{\kk\in k_F\Z^3}\hat g(\kk)\,e^{i\kk\cdot\q},\qquad k_F=\frac{2\pi}{L}.
+\label{eq:fourier}
+\end{equation}
+Products become convolutions with the factor $L^{-3}$:
+\begin{equation}
+\widehat{g_1g_2}(\kk)=\frac{1}{L^3}\sum_{\kk_1+\kk_2=\kk}\hat g_1(\kk_1)\hat g_2(\kk_2).
+\label{eq:conv}
+\end{equation}
+For a statistically homogeneous random field, $\langle\hat g(\kk)\hat g^*(\kk')\rangle=L^3\,P_g(k)\,\delta_{\kk\kk'}$ defines the power spectrum, and for two fields $P_{ab}$ is defined the same way; the cross-correlation coefficient is $r_{ab}(k)=P_{ab}/\sqrt{P_{aa}P_{bb}}$.
+
+The Nyquist wavenumber of level $\ell$ is $k_{\Ny,\ell}=\pi/h_\ell$. The space of functions band-limited to level $\ell$ is
+\begin{equation}
+\mathcal B_\ell=\{g:\ \hat g(\kk)=0\ \text{unless}\ |k_j|<k_{\Ny,\ell}\ \text{for } j=1,2,3\}.
+\end{equation}
+(Strict inequality: the Nyquist planes are excluded. In the code they are zeroed explicitly; this loses a set of measure zero of modes and removes the usual ambiguity of the $\pm k_\Ny$ identification.)
+
+\subsection{Sampling a band-limited function on an offset grid}
+
+Let $g\in\mathcal B_\ell$ and define its discrete Fourier transform from the samples on $\Lambda_\ell$ exactly as \texttt{numpy.fft} does, i.e.\ with phases referenced to the integer index and not to the physical position:
+\begin{equation}
+G_\ell(\kk):=\sum_{\mathbf i}g(\q_{\mathbf i})\,e^{-i\kk\cdot\mathbf i h_\ell},\qquad \kk\in k_F\Z^3,\ |k_j|<k_{\Ny,\ell}.
+\end{equation}
+
+\begin{lemma}[DFT of a band-limited function]\label{lem:dft}
+For $g\in\mathcal B_\ell$ and $|k_j|<k_{\Ny,\ell}$,
+\begin{equation}
+G_\ell(\kk)=h_\ell^{-3}\,e^{\,i\kk\cdot o\mathbf 1 h_\ell}\,\hat g(\kk).
+\label{eq:dft}
+\end{equation}
+\end{lemma}
+\begin{proof}
+Insert \eqref{eq:fourier} into the definition:
+$G_\ell(\kk)=L^{-3}\sum_{\kk'}\hat g(\kk')e^{i\kk'\cdot o\mathbf 1h_\ell}\sum_{\mathbf i}e^{i(\kk'-\kk)\cdot\mathbf i h_\ell}$. The inner sum equals $N_\ell^3$ if $\kk'-\kk\in 2k_{\Ny,\ell}\Z^3$ and $0$ otherwise. Since both $\kk$ and $\kk'$ lie strictly inside the Nyquist cube, the only solution is $\kk'=\kk$. Then $G_\ell(\kk)=N_\ell^3L^{-3}e^{i\kk\cdot o\mathbf 1h_\ell}\hat g(\kk)$ and $N_\ell^3/L^3=h_\ell^{-3}$.
+\end{proof}
+
+\begin{corollary}[Coarse and fine DFTs of the same function]\label{cor:cf}
+If $g\in\mathcal B_c$ (hence also $g\in\Bf$), then for $\kk$ inside the coarse Nyquist cube
+\begin{equation}
+G_c(\kk)=\Big(\frac{h_f}{h_c}\Big)^{3}e^{\,i\kk\cdot o\mathbf 1(h_c-h_f)}\,G_f(\kk)=\frac18\,e^{\,i\kk\cdot o\mathbf 1 h_f}\,G_f(\kk).
+\label{eq:cfphase}
+\end{equation}
+\end{corollary}
+This is the factor $(N_c/N_f)^3$ and the phase $e^{+i\kk\cdot o\mathbf 1h_f}$ used in the function \texttt{restrict\_spectral}; \texttt{prolong\_spectral} uses the inverse. With $o=0$ the coarse points are a subset of the fine points and the phase is $1$; with $o=\tfrac12$ the coarse points sit at the centres of $2\times2\times2$ blocks of fine points and the half-fine-cell phase is what makes the two grids consistent.
+
+\begin{exercise}
+Verify \eqref{eq:cfphase} directly for the single mode $g(\q)=e^{i\kk\cdot\q}$ with $o=\tfrac12$ by writing $\q^{c}_{\mathbf i}=(2\mathbf i+\mathbf 1)h_f$.
+\end{exercise}
+
+%======================================================================
+\section{Restriction, prolongation and the coarse/detail decomposition}
+%======================================================================
+
+\subsection{Spectral projectors}
+
+Let $W:k_F\Z^3\to\{0,1\}$ be an indicator supported strictly inside the coarse Nyquist cube. The two choices used in the code are
+\begin{equation}
+W_{\rm cube}(\kk)=\mathbb 1[\,|k_j|<k_{\Ny,c}\ \forall j\,],\qquad
+W_{\rm sph}(\kk)=\mathbb 1[\,|\kk|<\alpha\,k_{\Ny,c}\,]\,W_{\rm cube}(\kk),\quad \alpha\le1 .
+\end{equation}
+Define the Fourier multiplier $\PW$ by $\widehat{\PW g}=W\hat g$ and the subspace $\BW=\PW\Bf=\{g\in\Bf:\ \hat g=W\hat g\}$.
+
+\begin{proposition}\label{prop:proj}
+$\PW$ is an orthogonal projector on $\Bf$ (with the $L^2$ inner product), $\PW^2=\PW$, $\PW^\dagger=\PW$, and
+\begin{equation}
+\Bf=\BW\oplus\BW^{\perp},\qquad \BW^\perp=(I-\PW)\Bf .
+\end{equation}
+Every $g\in\Bf$ has the unique orthogonal decomposition $g=\PW g+(I-\PW)g$.
+\end{proposition}
+\begin{proof}
+$W^2=W$ because $W\in\{0,1\}$. Self-adjointness is Parseval's identity:
+\begin{equation*}
+\langle g_1,\PW g_2\rangle=L^{-3}\sum_\kk \hat g_1^*\,W\,\hat g_2=\langle \PW g_1,g_2\rangle .
+\end{equation*}
+\end{proof}
+
+\subsection{$R$ and $P$}
+
+\begin{definition}[Restriction and prolongation]
+Identify a coarse array with the unique function of $\Bc$ that interpolates it (Lemma~\ref{lem:dft} makes this identification explicit, including the offset phase). Define
+\begin{align}
+R&:\Bf\to\BW,\qquad R g=\PW g \ \text{(represented by its samples on }\Lambda_c),\\
+P&:\BW\to\Bf,\qquad P g=g \ \text{(represented by its samples on }\Lambda_f).
+\end{align}
+\end{definition}
+In words: $R$ keeps the modes selected by $W$ and re-samples on the coarse grid; $P$ is the band-limited (``zero-padding'') interpolation from the coarse grid to the fine grid. The array operations are exactly the coefficient copy with the factor and phase of Corollary~\ref{cor:cf}.
+
+\begin{proposition}[Exact identities]\label{prop:RP}
+$RP=I$ on $\BW$, and $PR=\PW$ on $\Bf$.
+\end{proposition}
+\begin{proof}
+For $g\in\BW$, $Pg=g$ and $R g=\PW g=g$. For $g\in\Bf$, $PRg=\PW g$.
+\end{proof}
+
+\begin{remark}[The coarse state of the chain; cube versus sphere]\label{rem:clean}
+The natural state variable of the progressive chain at a level is an element of $\BW$. With $W=W_{\rm cube}$ this is simply the coarse array: nothing is discarded, the nested-initial-condition split of Section~\ref{sec:linear} coincides with the model split, and every statement below about ``the new randomness'' is exact. This is the default.
+
+The sphere is tempting because it is isotropic and because the corner modes of the coarse cube ($|\kk|>\alpha k_{\Ny,c}$; for $\alpha=1$ they are $1-\pi/6\approx48\%$ of the coarse modes) are the ones a low-resolution run resolves worst. Using it, however, means projecting the input, $\Psic\leftarrow\PW\Psic$, and re-generating the corners as if they were fresh randomness. That is an approximation: the corner modes $\chi$ of the coarse initial conditions are independent of the rest \emph{a priori}, but the nonlinear coarse output inside the sphere, $\PW\Nbody_c[\delta_W+\chi]$, carries information about $\chi$ through mode coupling, so $p(\chi\mid\PW\Psic)\neq p(\chi)$. The exact treatment keeps the corners in the state (cube) and lets the correction band repair them. The sphere should be regarded as an ablation, not as the theoretical baseline.
+\end{remark}
+
+\begin{remark}[Why $W$ must be an indicator]
+If $W$ is replaced by a smooth taper $0\le W\le1$, then $\PW$ is no longer a projector ($W^2\neq W$), $RP\neq I$, and the ``coarse'' and ``detail'' parts overlap in the taper band. A taper can still be used as a partition of unity in the \emph{source distribution} of the generative model (Section~\ref{sec:fm}), but not to define the state of the chain.
+\end{remark}
+
+\subsection{The decomposition of a fine field and the two tasks of a $2\times$ step}
+
+For the fine field $\Psif\in\Bf$ (each component), Proposition~\ref{prop:proj} gives
+\begin{equation}
+\boxed{\ \Psif=P\,(R\Psif)\;+\;d,\qquad d:=(I-\PW)\Psif\in\BW^\perp .\ }
+\label{eq:decomp}
+\end{equation}
+The first term is what a coarse grid can represent; $d$ is the \emph{detail}. Given a coarse simulation $\Psic$ (cleaned as in Remark~\ref{rem:clean}), define the \emph{coarse correction}
+\begin{equation}
+\varepsilon:=R\Psif-\Psic .
+\label{eq:eps}
+\end{equation}
+Then $\Psif=P(\Psic+\varepsilon)+d$: a $2\times$ step must (i) produce $\varepsilon$, the error of the coarse run on the scales it resolves, and (ii) produce $d$. Both are functions of the same fine-grid residual $\Psif-P\Psic$: $\varepsilon$ is its $W$-band, $d$ its complementary band. The model therefore has a single fine-grid output; the two ``heads'' are Fourier bands of it.
+
+\subsection{Counting the new degrees of freedom}
+
+Per component, $\dim\Bf-\dim\BW$ is the number of modes outside $W$ but inside the fine cube. For $W_{\rm cube}$ and ignoring the Nyquist planes, $(2N_c)^3-N_c^3=7N_c^3$, which is also the number of fine grid points not shared with a coarse cell centre ($8-1$ per coarse cell). The new \emph{randomness} of a $2\times$ step is a scalar field with this many modes (the octave of the initial conditions, Section~\ref{sec:push}); the detail $d$ itself has three components and, as Section~\ref{sec:2lpt} shows, also contains a deterministic part generated by the coarse modes alone.
+
+\subsection{Haar restriction for comparison}
+
+The Haar (block-mean) restriction $R_H\Psi(\q^c_{\mathbf i})=\tfrac18\sum_{\mathbf s\in\{0,1\}^3}\Psi(\q^f_{2\mathbf i+\mathbf s})$ conserves mass and centre of mass exactly but is not a spectral projector.
+
+\begin{proposition}[Transfer function and aliasing of Haar]\label{prop:haar}
+Let $o=\tfrac12$ (block centres coincide with coarse points). For a single mode $e^{i\kk\cdot\q}$,
+\begin{equation}
+R_H e^{i\kk\cdot\q}\big|_{\q^c}=T_H(\kk)\,e^{i\kk\cdot\q^c},\qquad T_H(\kk)=\prod_{j=1}^3\cos\!\Big(\frac{k_jh_f}{2}\Big).
+\end{equation}
+Consequently, for a band-limited fine field, $R_H\Psif=\mathrm{Samp}_c\big[T_H\hat\Psif\big]$ where the sampling aliases every mode outside the coarse cube onto a mode inside it with weight $T_H\neq0$.
+\end{proposition}
+\begin{proof}
+The fine points of a block are $\q^c+(\mathbf s-\tfrac12\mathbf 1)h_f$; averaging $e^{ik_j(s_j-1/2)h_f}$ over $s_j\in\{0,1\}$ gives $\cos(k_jh_f/2)$ per axis.
+\end{proof}
+
+At first order in perturbation theory (Section~\ref{sec:linear}) this means $R_H\Psi^{(1)}_f-\Psi^{(1)}_c=(T_H-1)\Psi^{(1)}_c+\text{(aliased octave modes)}$: a deterministic mismatch $\approx-\tfrac18\sum_j(k_jh_f)^2\Psi_c^{(1)}$ at low $k$, with power $\propto k^4P_{\Psi}(k)$, plus a \emph{random} term that the spectral $R$ does not have. (With $o=0$ the block centre is displaced by $\tfrac12h_f\mathbf 1$ from the coarse point, an extra phase $e^{i\kk\cdot\mathbf 1h_f/2}$ appears, and the mismatch is $O(k)$ with power $\propto k^2P_\Psi$.) These are the flat/negative low-$k$ slopes of the Haar curves in the self-test.
+
+\begin{exercise}
+For $P_\Psi\propto k^{n-2}$ with $n=-1.5$, predict the low-$k$ slope of $P_\varepsilon$ for Haar with $o=\tfrac12$ and with $o=0$, and compare with the measured $\approx+0.6$ and $\approx-1.7$.
+\end{exercise}
+
+%======================================================================
+\section{Nested initial conditions and linear theory}\label{sec:linear}
+%======================================================================
+
+\subsection{Nested initial conditions}
+
+The linear density contrast is a Gaussian random field with $\langle\hat\delta(\kk)\hat\delta^*(\kk')\rangle=L^3P_\lin(k)\delta_{\kk\kk'}$ (normalised to $z=0$; the growth factor $D(a)$ multiplies it at other times). The initial-condition generator of level $\ell$ draws exactly the modes of $\mathcal B_\ell$, using the same random numbers for the same $\kk$ at every level. Hence
+\begin{equation}
+\delta_f=\delta_c+\eta,\qquad \hat\delta_c=W_{\rm cube}\hat\delta_f,\qquad \hat\eta=(1-W_{\rm cube})\hat\delta_f ,
+\label{eq:nested}
+\end{equation}
+and $\eta$, the \emph{octave}, is independent of $\delta_c$ (disjoint sets of independent Gaussian modes).
+
+\subsection{Zel'dovich displacement}
+
+At first order, $\Psi^{(1)}=-D\nabla\phi^{(1)}$ with $\nabla^2\phi^{(1)}=\delta$, i.e.
+\begin{equation}
+\hat\Psi^{(1)}(\kk)=D\,\frac{i\kk}{k^2}\hat\delta(\kk)=:D\,\Zel\hat\delta ,\qquad \nabla\cdot\Psi^{(1)}=-D\delta .
+\label{eq:zel}
+\end{equation}
+$\Zel$ is a Fourier multiplier; it commutes with every spectral projector.
+
+\begin{proposition}[Linear theory of the correction and the detail]\label{prop:linear}
+With nested initial conditions and any indicator $W\le W_{\rm cube}$:
+\begin{enumerate}
+\item[(i)] $\varepsilon^{(1)}:=R\Psi^{(1)}_f-\PW\Psi^{(1)}_c=0$ identically.
+\item[(ii)] $d^{(1)}=(I-\PW)\Psi_f^{(1)}=D\Zel(1-W)\hat\delta_f$ is a Gaussian field, independent of $\PW\Psi_c^{(1)}$, with covariance diagonal in $\kk$ and equal to $D^2P_\lin(k)/k^2$ on the modes outside $W$.
+\item[(iii)] The velocity obeys the same statements with $D\to \dot D=aHfD$.
+\end{enumerate}
+\end{proposition}
+\begin{proof}
+(i) $R\Psi^{(1)}_f=\PW D\Zel\hat\delta_f=D\Zel W\hat\delta_f$ and $\PW\Psi^{(1)}_c=D\Zel WW_{\rm cube}\hat\delta_f=D\Zel W\hat\delta_f$ because $W\le W_{\rm cube}$. (ii) $(1-W)\hat\delta_f$ and $W\hat\delta_f$ involve disjoint sets of independent Gaussian coefficients. (iii) $\mathbf v^{(1)}=\dot D\Zel\hat\delta$.
+\end{proof}
+
+\begin{remark}
+(i) is the reason to prefer a spectral $R$ over Haar: with the spectral $R$ the whole correction $\varepsilon$ is a mode-coupling effect (Section~\ref{sec:2lpt}), while Haar creates a first-order mismatch. (ii) is the reason to hard-code the linear octave into the model: at early times or on large scales the detail is \emph{exactly} a known Gaussian, and the network should only have to learn the departure from it.
+\end{remark}
+
+%======================================================================
+\section{Second order: the structure of the conditional}\label{sec:2lpt}
+%======================================================================
+
+\subsection{2LPT}
+
+In the conventions of Bouchet et al.\ (1995),
+\begin{equation}
+\Psi=-D\nabla\phi^{(1)}+D_2\nabla\phi^{(2)},\qquad \nabla^2\phi^{(2)}=S:=\sum_{i>j}\big[\phi^{(1)}_{,ii}\phi^{(1)}_{,jj}-(\phi^{(1)}_{,ij})^2\big],\qquad D_2\simeq-\tfrac37D^2 .
+\label{eq:2lpt}
+\end{equation}
+Two identities will be used. First, with $D=1$ and the deformation tensor $D_{ij}:=\partial_i\Psi_j$, whose first-order value is $D^{(1)}_{ij}=-\phi^{(1)}_{,ij}$,
+\begin{equation}
+S=\tfrac12\Big[(\nabla^2\phi^{(1)})^2-\phi^{(1)}_{,ij}\phi^{(1)}_{,ij}\Big]=\tfrac12\Big[(\tr D^{(1)})^2-D^{(1)}_{ij}D^{(1)}_{ij}\Big]=\sum_{i<j}\lambda_i\lambda_j ,
+\label{eq:S}
+\end{equation}
+where $\lambda_i$ are the eigenvalues of $D^{(1)}$ (the second elementary symmetric polynomial). Second, in Fourier space, using $\hat\phi^{(1)}=-\hat\delta/k^2$ and \eqref{eq:conv},
+\begin{equation}
+\hat S(\kk)=\frac{1}{2L^3}\sum_{\kk_1+\kk_2=\kk}K(\kk_1,\kk_2)\,\hat\delta(\kk_1)\hat\delta(\kk_2),\qquad
+K(\kk_1,\kk_2)=1-\frac{(\kk_1\cdot\kk_2)^2}{k_1^2k_2^2}=\frac{|\kk_1\times\kk_2|^2}{k_1^2k_2^2},
+\label{eq:kernel}
+\end{equation}
+and the second-order displacement is the gradient of the inverse Laplacian of $S$. Since the Fourier multiplier of $\nabla^{-2}$ is $-1/k^2$, the real-space and Fourier-space forms are (with $D=1$)
+\begin{equation}
+\Psi^{(2)}=D_2\nabla\nabla^{-2}S=-\tfrac37\,\nabla\nabla^{-2}S,\qquad
+\hat\Psi^{(2)}(\kk)=D_2\,i\kk\,\hat\phi^{(2)}(\kk)=-D_2\frac{i\kk}{k^2}\hat S(\kk)=+\frac37\,\frac{i\kk}{k^2}\hat S(\kk).
+\label{eq:psi2}
+\end{equation}
+(The two signs differ because $\nabla^{-2}\to-1/k^2$; an earlier version of these notes dropped the minus sign in the real-space form.) We write $\mathcal T_2:=D_2\nabla\nabla^{-2}$ for the linear operator that turns a source into a second-order displacement.
+
+\begin{exercise}
+Derive \eqref{eq:S} by expanding $(\sum_i\phi_{,ii})^2$ and $\phi_{,ij}\phi_{,ij}$; derive \eqref{eq:kernel} from $\phi_{,ij}\to k_ik_j\hat\delta/k^2$.
+\end{exercise}
+
+\subsection{The long/short split}
+
+Write $\delta_f=\delta_L+\eta$ with $\delta_L:=\delta_c$ (the coarse, or ``long'', modes). Since $S$ is a quadratic form, its polarisation gives
+\begin{equation}
+S[\delta_L+\eta]=S[\delta_L]+S[\eta]+B(\delta_L,\eta),\qquad
+B(a,b):=\tr D^{a}\,\tr D^{b}-D^{a}_{ij}D^{b}_{ij},
+\label{eq:split}
+\end{equation}
+with $D^a_{ij}=-\partial_i\partial_j\nabla^{-2}a$. The coarse simulation, if it solved the continuum equations exactly for the band-limited input $\delta_L$, would produce $\Psi^{(2)}_c=\mathcal T_2S[\delta_L]$, while the fine one produces $\Psi^{(2)}_f=\mathcal T_2\big[S[\delta_L]+B(\delta_L,\eta)+S[\eta]\big]$ (all outputs understood as band-limited to the fine cube). Projecting with $\PW$ and $I-\PW$:
+\begin{equation}
+\boxed{\ \varepsilon^{(2)}=\PW\,\mathcal T_2\big[B(\delta_L,\eta)+S[\eta]\big],\qquad
+d^{(2)}=(I-\PW)\,\mathcal T_2\big[S[\delta_L]+B(\delta_L,\eta)+S[\eta]\big]\ }
+\label{eq:eps2}
+\end{equation}
+The $S[\delta_L]$ term cancels in the \emph{correction} (both runs contain it on the coarse band) but \emph{not} in the detail: two coarse modes can add up to a mode outside $W$. A concrete instance, in units of $k_F$ with coarse cutoff $4$: $\mathbf p=(3,2,0)$ and $\mathbf q=(3,-2,0)$ are both inside the coarse cube, $\mathbf p+\mathbf q=(6,0,0)$ is outside it but inside the fine cube, and $K(\mathbf p,\mathbf q)=1-25/169=144/169\neq0$. So even with $\eta\equiv0$ the fine detail is non-zero. Consequences: (i) the detail band contains a part that is a deterministic function of the coarse initial conditions (the nonlinear ``harmonics'' of the coarse modes), on top of the part driven by the octave; the model, being conditioned on the coarse field, produces both, but the sentence ``the detail is the new randomness'' is true only at first order; (ii) $d^{(2)}$ is not band-limited to $2\times$ the coarse cutoff in any simple way, which is one more reason to give the network the whole fine grid rather than a per-cell rule.
+
+\subsection{Suppression of the correction at low $k$}
+
+\begin{lemma}[Exact small-$k$ form of the kernel]\label{lem:kernel}
+For $\kk_2=\kk-\kk_1$ and $\mu:=\hat\kk\cdot\hat\kk_1$,
+\begin{equation}
+K(\kk_1,\kk-\kk_1)=\frac{k^2\,(1-\mu^2)}{|\kk-\kk_1|^2}.
+\end{equation}
+\end{lemma}
+\begin{proof}
+$\kk_1\times\kk_2=\kk_1\times(\kk-\kk_1)=\kk_1\times\kk$, so $|\kk_1\times\kk_2|^2=k_1^2k^2(1-\mu^2)$; divide by $k_1^2k_2^2$.
+\end{proof}
+(An equivalent route: with $\epsilon=k/k_1$, $(\kk_1\cdot\kk_2)^2/(k_1^2k_2^2)=(1-\epsilon\mu)^2/(1-2\epsilon\mu+\epsilon^2)=1-\epsilon^2(1-\mu^2)/(1-2\epsilon\mu+\epsilon^2)$.)
+
+\begin{proposition}[The $k^2$/$k^4$ law for the octave--octave term]\label{prop:k2}
+Let $\vartheta^{(2)}:=-\nabla\cdot\Psi^{(2)}$ denote the divergence of the second-order displacement (it is \emph{not} the full second-order Eulerian density, see Remark~\ref{rem:density}). For the octave--octave source, Lemma~\ref{lem:kernel} gives, for every realisation,
+\begin{equation}
+\hat S_{\eta\eta}(\kk)=k^2\,\hat Q(\kk),\qquad \hat Q(\kk)=\frac{1}{2L^3}\sum_{\kk_1}\frac{1-\mu_1^2}{|\kk-\kk_1|^2}\,\hat\eta(\kk_1)\hat\eta(\kk-\kk_1),
+\end{equation}
+where both $\kk_1$ and $\kk-\kk_1$ lie outside the coarse cube, so the denominators are bounded below by $k_{\Ny,c}^2$. The statistical statement follows by Wick's theorem (two contractions, symmetric kernel):
+\begin{align}
+P_{S_{\eta\eta}}(k)&=\frac12\int\frac{\dd^3p}{(2\pi)^3}\,K^2(\mathbf p,\kk-\mathbf p)\,P_\eta(p)\,P_\eta(|\kk-\mathbf p|)\nonumber\\
+&=k^4\cdot\frac12\int\frac{\dd^3p}{(2\pi)^3}\frac{(1-\mu_p^2)^2}{|\kk-\mathbf p|^4}P_\eta(p)P_\eta(|\kk-\mathbf p|)
+\ \xrightarrow[k\to0]{}\ C\,k^4 ,
+\end{align}
+with $0<C<\infty$ because the remaining integral is over a band away from the origin and converges to a constant. Hence, using \eqref{eq:psi2},
+\begin{equation}
+P_{\Psi^{(2)}_{\eta\eta}}(k)=\Big(\tfrac37\Big)^2\frac{P_{S_{\eta\eta}}(k)}{k^2}\propto k^2,\qquad
+P_{\vartheta^{(2)}_{\eta\eta}}(k)=\Big(\tfrac37\Big)^2P_{S_{\eta\eta}}(k)\propto k^4 .
+\end{equation}
+\end{proposition}
+The realisation-level statement is that $\hat Q(\kk)$ is a random variable whose variance is $k$-independent for $k\ll k_{\Ny,c}$; the ensemble statement above is the precise form, and it is what the shell-averaged spectra in the code measure.
+
+Three qualifications. First, the mixed term $B(\delta_L,\eta)$ carries the same kernel factor, but the pairs $(\kk_L,\kk_\eta)$ that can add up to a small $\kk$ must both lie within a distance $\sim k$ of the cutoff surface, so its phase space shrinks with $k$ as well and its low-$k$ power falls at least as fast as the octave--octave term; the low-$k$ correction is dominated by $S[\eta]$. Second, this is a statement about the ideal, de-aliased, second-order contribution; higher-order deterministic responses and the discreteness errors of a real coarse run (Remark~\ref{rem:disc}) need not share the exponent. Third, the divergence $\vartheta$ and the Eulerian density are different fields; see the next remark.
+
+\begin{remark}[Divergence versus Eulerian density]\label{rem:density}
+Mass conservation gives, for $\kk\neq0$, $\hat\delta_E(\kk)=\int\dd^3q\,e^{-i\kk\cdot\q}\big[e^{-i\kk\cdot\Psi(\q)}-1\big]$, whose second-order part is
+$\hat\delta^{(2)}_E=-ik_i\hat\Psi^{(2)}_i-\tfrac12k_ik_j\,\widehat{\Psi^{(1)}_i\Psi^{(1)}_j}$. The second term (first-order displacements changing the spacing of mass elements) is absent from $\vartheta^{(2)}$. Assembling both gives the standard $F_2$ kernel of Eulerian perturbation theory, for which $F_2(\mathbf p,\kk-\mathbf p)=O(k^2)$ as $\kk\to0$ with $\mathbf p$ fixed; so the octave--octave part of the true density power also falls as $k^4$ (Peebles' tail), but that is a separate calculation. In the code the ``divergence'' spectra are exactly $\vartheta$; density spectra from particle deposition are a different diagnostic.
+\end{remark}
+
+This is the Lagrangian form of mass and momentum conservation: rearranging matter inside a small region cannot move mass on large scales except at order $k^2$ in the density. In the language of the effective field theory of large-scale structure, $\frac37\nabla Q$ is the stochastic term; the ``sound-speed'' counterterm $\propto c_s^2k^2\hat\Psi^{(1)}$ appears one order higher, from $\delta_L\eta\eta$. The de-aliased 2LPT self-test measures shell-averaged slopes $2.19$ (displacement) and $4.14$ (divergence).
+
+\begin{remark}[Discreteness caveat]\label{rem:disc}
+The cancellation of $S[\delta_L]$ in the correction of \eqref{eq:eps2} assumes the coarse run computes the quadratic term without aliasing. A grid code evaluates products on its own grid, and a product of two modes near $k_{\Ny,c}$ has support up to $2k_{\Ny,c}$, which aliases back to low $k$ with the kernel evaluated at the \emph{large} arguments, i.e.\ without the $k^2$ suppression. A real $N$-body run has its own version of this (PM aliasing, softening, time stepping). Empirically it is a small white floor at low $k$; its amplitude is what \texttt{phase0\_octaves.py} panel (a) measures on the real $64/128/256/512$ series.
+\end{remark}
+
+\subsection{How the octave couples to the coarse field: locality and the deformation tensor}
+
+In real space the cross term of \eqref{eq:split} is pointwise:
+\begin{equation}
+B(\delta_L,\eta)(\q)=\tr D^{L}(\q)\,\tr D^{\eta}(\q)-D^{L}_{ij}(\q)\,D^{\eta}_{ij}(\q),
+\label{eq:B}
+\end{equation}
+where $D^L_{ij}=\partial_i\Psi^{(1)}_{L,j}$ is the (first-order) deformation tensor of the coarse field and $D^\eta$ that of the linear octave. Thus, to leading order, the coarse field enters the octave-driven part of the detail \emph{only} through its deformation tensor, locally in $\q$, followed by the potential solve $\mathcal T_2$. (The coarse-only harmonics $(I-\PW)\mathcal T_2S[\delta_L]$ of \eqref{eq:eps2} are likewise a local quadratic function of $D^L$ followed by $\mathcal T_2$.) Decompose $D^L$ into its trace and traceless parts, $D^L_{ij}=-\tfrac13\delta_L\,\delta_{ij}+\tau^L_{ij}$ (using $\tr D^L=-\delta_L$):
+\begin{equation}
+B=-\tfrac23\,\delta_L\,\tr D^\eta-\tau^L_{ij}D^\eta_{ij}.
+\end{equation}
+The first term is the isotropic (``separate universe'') coupling: a local overdensity enhances the growth of the small-scale modes; the second is the tidal coupling, which is what anisotropic separate-universe simulations measure. If $D^L$ is constant over a patch, the short modes in that patch evolve as in a homogeneous, anisotropically deformed background.
+
+This is the justification for the network inputs: the coarse field is presented as $D_{ij}(P\Psic)$ (nine dimensionless channels), never as $\Psic$ itself. A constant displacement of the coarse field (a pure translation) changes nothing, and the leading physics is a local function of $D_{ij}$.
+
+\begin{exercise}
+Starting from \eqref{eq:B}, show that the Fourier-space kernel of the cross term is $K(\kk_L,\kk_\eta)=1-(\hat\kk_L\cdot\hat\kk_\eta)^2$ and interpret $(\hat\kk_L\cdot\hat\kk_\eta)^2=\hat k_{\eta,i}\hat k_{\eta,j}\hat k_{L,i}\hat k_{L,j}$ as the contraction of the octave direction with the coarse deformation tensor.
+\end{exercise}
+
+%======================================================================
+\section{The conditional distribution: exact statements}\label{sec:push}
+%======================================================================
+
+Let $\Nbody_\ell$ denote the map of the level-$\ell$ simulation code from its linear initial conditions $\delta\in\mathcal B_\ell$ to the pair $(\Psi_\ell,\mathbf v_\ell)$ at the output time. The simulation is deterministic.
+
+\begin{proposition}[Push-forward form of the physical conditional]\label{prop:push}
+Let $C$ denote the coarse output that is actually conditioned on. If $C$ determines $\delta_c$ (for instance $C=(\Psic,\mathbf v_c)$, the full phase-space output, and $\Nbody_c$ is injective), then
+\begin{equation}
+\Psif\ \overset{d}{=}\ \Nbody_f[\delta_c+\eta],\qquad \eta\sim\mathcal N\big(0,\ P_\lin\ \text{restricted to the octave}\big),\quad \eta\perp\delta_c ,
+\end{equation}
+i.e.\ $p(\Psif\mid C)$ is the push-forward of a known Gaussian with $7N_c^3$ scalar degrees of freedom through the map $\eta\mapsto\Nbody_f[\delta_c+\eta]$. In general, without assuming that $C$ determines $\delta_c$,
+\begin{equation}
+p(\Psif\in A\mid C)=\int\!\!\int\mathbb 1_A\big(\Nbody_f[\delta_c+\eta]\big)\,\gamma(\dd\eta)\,p(\dd\delta_c\mid C),
+\label{eq:mixture}
+\end{equation}
+a mixture over the residual uncertainty $p(\delta_c\mid C)$ of the coarse initial conditions given $C$, with $\gamma$ the octave Gaussian.
+\end{proposition}
+\begin{proof}
+By \eqref{eq:nested}, $\delta_f=\delta_c+\eta$ with $\eta$ independent of $\delta_c$, hence of any function $C$ of $\delta_c$; condition on $C$ and integrate over what it leaves undetermined.
+\end{proof}
+
+\begin{remark}[What is actually conditioned on]
+The state used by the model is not the full coarse output. It is successively reduced: $(\Psic,\mathbf v_c)\to\Psic\to\PW\Psic\to$ a local patch of $D_{ij}(P\Psic)$ seen by a finite receptive field. Injectivity of the full map $\Nbody_c$ says nothing about whether these reduced observations determine $\delta_c$; the honest description is \eqref{eq:mixture}, and $p(\delta_c\mid C)$ is degenerate only in the idealised case. Two practical consequences. (i) The randomness a $2\times$ step must supply is the octave \emph{plus} whatever the reduced conditioning leaves unresolved of $\delta_c$; only the former has the clean Gaussian form. (ii) With the sphere window the discarded corner modes $\chi$ are part of $\delta_c$; the retained field $\PW\Nbody_c[\delta_W+\chi]$ is informative about $\chi$ through mode coupling, so $\chi$ is \emph{not} an independent Gaussian given $C$, and a source that re-samples the corners from the prior is an approximation (Remark~\ref{rem:clean}). With the cube window this issue is absent.
+\end{remark}
+
+\begin{corollary}[Markov property across levels]
+For the full nested chain, $p(\Psi_{\ell+2}\mid\Psi_{\ell+1},\Psi_\ell)=p(\Psi_{\ell+2}\mid\Psi_{\ell+1})$ whenever $\Psi_{\ell+1}$ determines $\delta_{\ell+1}$, so the autoregressive chain is exact:
+$p(\Psi_{L}\mid\Psi_0)=\int\prod_{\ell=0}^{L-1}p(\Psi_{\ell+1}\mid\Psi_\ell)\,\dd\Psi_1\cdots\dd\Psi_{L-1}$.
+\end{corollary}
+\begin{proof}
+$\delta_{\ell+1}\supset\delta_\ell$, and $\Psi_{\ell+2}$ depends on $\delta_{\ell+1}$ and an independent octave.
+\end{proof}
+The Markov property is a property of the full (hidden) state. A chain built on reduced states (projected fields, patches) is Markov only if the reduction is a sufficient statistic; otherwise earlier levels carry information the current state has lost, and the one-step conditional used in the chain is a modelling approximation. This is one reason to keep the cube window and, eventually, to include the velocity field in the state.
+
+Two consequences shape the method. First, the randomness of a $2\times$ step has a physical identity (the octave initial conditions) and a known dimension; a model whose noise is that octave can be trained \emph{with the true $\eta$} (the setting of Paper IV, extended level by level) and used with a sampled $\eta$ (a generative model). Second, under the idealised conditioning of Proposition~\ref{prop:push}, $\Psif$ is a deterministic function of $(C,\eta)$: a perfect regressor with the true $\eta$ as input would be exact, and fed a fresh $\eta$ it would be a valid generative model. Chaos in multi-stream regions does not change this in exact arithmetic (a fixed initial condition has one outcome); what it changes is how much of $(\delta_c,\eta)$ a model with finite capacity, finite receptive field and finite training data can effectively use, and how fast round-off is amplified in a real code. The conditional flow matching of the next section is formulated so that its correctness in generative mode does not rest on the regressor being exact.
+
+%======================================================================
+\section{Conditional flow matching with the physical coupling}\label{sec:fm}
+%======================================================================
+
+Everything in this section is conditional on the coarse field $C$ (the coarse array with the cube window; the projected field if the sphere is used); the conditioning is suppressed in the notation except where it matters. All fields are on the fine grid and measured in units of $h_f$.
+
+\subsection{Source, target, coupling}
+
+\begin{align}
+x_0&=P\Psic+\Psi^{(1)}[\eta]=P\Psic+D\Zel\hat\eta,\qquad \eta\sim\mathcal N(0,P_\lin|_{\rm octave}),\label{eq:x0}\\
+x_1&=\Psif .
+\end{align}
+Let $q_0,q_1$ be the laws of $x_0,x_1$. A \emph{coupling} is a joint law $\pi(x_0,x_1)$ with these marginals. Two couplings matter:
+\begin{itemize}
+\item[] \emph{independent}: $\eta$ in $x_0$ is drawn independently of the $\eta$ that produced $x_1$;
+\item[] \emph{physical}: the same $\eta$ appears in both, $x_1=\Nbody_f[\delta_c+\eta]$ and $x_0=P\Psic+D\Zel\hat\eta$.
+\end{itemize}
+Both have the correct marginals, because the marginal of $x_0$ only depends on the law of $\eta$, which is the same.
+
+\subsection{The interpolant and the marginal velocity}
+
+Define the straight-line interpolant and its velocity
+\begin{equation}
+x_t=(1-t)x_0+t\,x_1,\qquad \dot x_t=x_1-x_0,\qquad t\in[0,1],
+\end{equation}
+let $p_t$ be the law of $x_t$ under $\pi$ (so $p_0=q_0$, $p_1=q_1$), and define the \emph{marginal velocity field}
+\begin{equation}
+u_t(x):=\E_\pi\big[x_1-x_0\ \big|\ x_t=x\big].
+\label{eq:ut}
+\end{equation}
+
+\begin{theorem}[Marginals are transported by $u_t$, for any coupling]\label{thm:fm}
+$p_t$ solves the continuity equation $\partial_tp_t+\nabla\cdot(p_tu_t)=0$. Hence, if $u_t$ is Lipschitz, the flow $\dot X_t=u_t(X_t)$, $X_0\sim q_0$, satisfies $X_t\sim p_t$ and in particular $X_1\sim q_1$. The result depends on $\pi$ only through $u_t$; the marginals of the generated samples do not depend on the coupling.
+\end{theorem}
+\begin{proof}
+For any smooth compactly supported test function $\varphi$,
+\begin{equation}
+\frac{\dd}{\dd t}\E\,\varphi(x_t)=\E\big[\nabla\varphi(x_t)\cdot(x_1-x_0)\big]
+=\E\Big[\nabla\varphi(x_t)\cdot\E[x_1-x_0\mid x_t]\Big]=\int\nabla\varphi(x)\cdot u_t(x)\,p_t(x)\,\dd x,
+\end{equation}
+using the tower property of conditional expectation. The left side is $\frac{\dd}{\dd t}\int\varphi\,p_t$, so $\int\varphi\,\partial_tp_t=-\int\varphi\,\nabla\cdot(p_tu_t)$ for all $\varphi$, which is the weak continuity equation. The law of $X_t$ for the ODE flow solves the same equation with the same initial condition; uniqueness for Lipschitz vector fields gives $\mathrm{Law}(X_t)=p_t$.
+\end{proof}
+
+\subsection{The training objective}
+
+\begin{proposition}[Minimiser of the flow-matching loss]\label{prop:loss}
+For $v_\theta:\R^{d}\times[0,1]\to\R^d$ and $t\sim\mathcal U[0,1]$,
+\begin{equation}
+\mathcal L(\theta)=\E_{t,\pi}\big\|v_\theta(x_t,t)-(x_1-x_0)\big\|^2
+=\E_{t}\,\E_{x_t\sim p_t}\big\|v_\theta(x_t,t)-u_t(x_t)\big\|^2+\E_t\,\E\big[\Var(x_1-x_0\mid x_t)\big].
+\end{equation}
+The second term does not depend on $\theta$; the minimiser is $v_\theta=u_t$.
+\end{proposition}
+\begin{proof}
+Bias--variance decomposition of the squared error around the conditional mean $u_t(x_t)=\E[x_1-x_0\mid x_t]$; the cross term vanishes by the tower property.
+\end{proof}
+
+In the code, $v_\theta$ receives $x_t-P\Psic$ (not $x_t$), the nine channels of $D_{ij}(P\Psic)$, and $t$; the target is $x_1-x_0$; everything is in units of $h_f$. Since $x_1-x_0$ is unchanged by a constant shift of all fields and $D_{ij}$ is shift invariant, the learned map is translation invariant by construction.
+
+\subsection{Why the physical coupling is the right one}
+
+By Theorem~\ref{thm:fm} the physical coupling is admissible. It is preferable because it makes the transport short and nearly straight. Write $\Psif=P\Psic+D\Zel\hat\eta+\rho$, where $\rho$ collects the coarse correction and the nonlinear part of the detail (\eqref{eq:eps2} and higher orders). Then
+\begin{align}
+\E\|x_1-x_0\|^2_{\rm phys}&=\E\|\rho\|^2,\\
+\E\|x_1-x_0\|^2_{\rm indep}&=\E\|\rho+D\Zel(\hat\eta-\hat\eta')\|^2=\E\|\rho\|^2+2\,\E\|D\Zel\hat\eta\|^2+2\,\E\langle\rho,D\Zel\hat\eta\rangle,
+\end{align}
+with $\eta'$ an independent copy. The independent coupling adds twice the linear octave variance (plus a cross term that vanishes at second order because $\rho$ is quadratic in $\eta$): the network would have to ``re-invent'' the linear theory it already has. Under the physical coupling, $x_1-x_0$ vanishes at first order in perturbation theory, is small in single-stream regions, and is large only where the map $\eta\mapsto\Psif$ is strongly nonlinear (multi-stream regions). In the toy model the baseline $x_0$ alone already reaches $r\approx0.92$ against the truth in the octave band.
+
+A remark on the geometry of the source. Conditional on $C$, $x_0-P\Psic$ is curl-free with covariance $\propto D^2P_\lin(k)k_ik_j/k^4$ per mode: a rank-one, purely longitudinal three-component field, i.e.\ a distribution supported on a $7N_c^3$-dimensional linear subspace of the $3\times7N_c^3$-dimensional detail space. This is not a defect. Conditional on $C$ the target is the push-forward of the \emph{same} scalar octave through $\Nbody_f$ (Proposition~\ref{prop:push}), hence also supported on a $7N_c^3$-dimensional (curved) manifold; the transverse components of the true detail are functions of $\eta$, not extra randomness. A regular flow maps one such manifold onto the other. What the degeneracy does imply is that the learned velocity field is only constrained on the support of $p_t$; off-manifold errors of the network are not self-correcting, which is an argument for keeping an Eulerian (density) term in the loss and for the multi-step integration, and it is one of the places where the idealised conditioning of Proposition~\ref{prop:push} and the reduced conditioning actually used differ.
+
+\subsection{Emulator mode, generative mode, and the one-step (regression) limit}
+
+\emph{Emulator mode} feeds the true octave $\eta$ of a simulation into \eqref{eq:x0} and integrates the learned ODE. \emph{Generative mode} feeds a sampled $\eta$; by Theorem~\ref{thm:fm} the output has the correct conditional law. In both modes the ODE is deterministic: all randomness of a sample enters through $x_0$, and the integration only transports it. Nothing is ``added back'' along the way; the marginal velocity $u_t$ is itself a conditional mean.
+
+Consider a single explicit Euler step from $t=0$:
+\begin{equation}
+\hat x_1=x_0+u_0(x_0)=x_0+\E[x_1-x_0\mid x_0,C]=\E[x_1\mid x_0,C].
+\end{equation}
+The one-step model is exactly the conditional-mean regressor \emph{with respect to the information $(x_0,C)$}. What that implies depends on how much $(x_0,C)$ determines.
+
+\paragraph{Full physical conditioning.} With the physical coupling, $x_0-P\Psic=D\Zel\hat\eta$ is the linear octave, so $\eta=-D^{-1}\nabla\cdot(x_0-P\Psic)$ is recovered exactly, and if $C$ determines $\delta_c$ then $x_1=\Nbody_f[\delta_c+\eta]$ is a deterministic function of $(x_0,C)$: $\Var(x_1\mid x_0,C)=0$. An ideal one-step regressor is then exact, and so is the ideal flow. Chaos does not alter this: a fixed initial condition has a single outcome. (In a real code, round-off amplified by chaotic dynamics makes the map effectively non-deterministic at the particle level inside halos; this is a statement about the simulator, not about the mathematics of the conditional.)
+
+\paragraph{Partial information.} Whenever the conditioning leaves residual uncertainty --- coarse field only (no octave), the independent coupling, a projected or patch-local view of $C$, a finite-capacity network --- the law of total variance for any Fourier mode,
+\begin{equation}
+\E|\hat x_1|^2=\E\big|\E[\hat x_1\mid\mathcal I]\big|^2+\E\big[\Var(\hat x_1\mid\mathcal I)\big],
+\end{equation}
+says the conditional-mean predictor given the information $\mathcal I$ is deficient in power by the conditional variance. Because $\E\big[\hat x_1\,\overline{\E[\hat x_1\mid\mathcal I]}\big]=\E|\E[\hat x_1\mid\mathcal I]|^2$, its cross power with the truth equals its own power, hence
+\begin{equation}
+\boxed{\ \text{conditional mean given }\mathcal I:\quad \frac{P_{\rm pred}}{P_{\rm true}}=r^2 ;\qquad \text{correct generative model:}\quad \frac{P_{\rm pred}}{P_{\rm true}}=1\ \text{for any } r .\ }
+\label{eq:r2}
+\end{equation}
+The relevant contrast is therefore between a regressor trained \emph{without} the octave (or with the independent coupling), which collapses to $\E[x_1\mid C]$ and sits on the line $P/P_{\rm true}=r^2$, and a generative model whose randomness is the octave, which sits on the line $P/P_{\rm true}=1$. With the physical coupling both objectives are in principle exact; the flow's advantage there is empirical (an iterative, easier regression at every $t$), not a variance argument.
+
+\paragraph{Reading the toy numbers.} In the reference $16\to32$ run, one Euler step gives $r=0.993$ and $P_{\rm pred}/P_{\rm true}=0.959$, whereas an optimal conditional mean with that $r$ would have $r^2=0.986$. The one-step model is therefore \emph{not} the optimal regressor; the gap is a model/optimisation deficit, and the improvement to $0.993$ with eight Heun steps is best described as the multi-step parameterisation fitting the same map better, to be checked against a direct regression baseline trained under identical conditions. The sampled-octave run has $P_{\rm pred}/P_{\rm true}\approx1.02$ with $r\approx0$, as \eqref{eq:r2} predicts for a generative model.
+
+\begin{exercise}
+Prove the identity $\E[\hat x_1\overline{\E[\hat x_1\mid\mathcal I]}]=\E|\E[\hat x_1\mid\mathcal I]|^2$ and deduce $r^2=P_{\rm pred}/P_{\rm true}$ for the conditional-mean predictor. Then show that for the physical coupling with $C$ determining $\delta_c$, $\Var(x_1\mid x_0,C)=0$.
+\end{exercise}
+
+\subsection{Sampling}
+
+The ODE $\dot X_t=v_\theta(X_t,t)$ is integrated from $X_0=x_0$ with Heun's method on a uniform grid of $n$ steps. Because $v_\theta$ is trained on straight-line interpolants under a short coupling, few steps are needed; the sweep $n=1,2,8$ gives octave-band power ratios $0.959,0.978,0.993$ on the reference model, which by the discussion above measures how well the multi-step parameterisation fits the map, not a restoration of variance. The wavelet-conditional argument of Guth et al.\ (2022) is that, when generation is organised scale by scale, the number of steps per scale is independent of resolution; here each $2\times$ step always generates ``the next octave relative to its input'', so the task is the same at every level.
+
+\subsection{Sampling the linear octave}
+
+To draw $\eta$ with the right statistics without an external linear power spectrum, the code measures the isotropic power of the linear \emph{density} from the training initial conditions, $\hat\delta^{(1)}=-i\kk\cdot\hat\Psi^{(1)}$, and synthesises a Gaussian $\hat\delta$ with that power on the modes outside $W$ (with the cube window these are exactly the octave; with the sphere they also include the corner modes, subject to the caveat of Remark~\ref{rem:clean}); the displacement then follows from \eqref{eq:zel}, which makes it curl-free automatically. Sampling the three displacement components independently would not be curl-free and would be wrong at first order.
+
+%======================================================================
+\section{Scale conditioning and self-similarity}\label{sec:ss}
+%======================================================================
+
+\subsection{Dimensionless inputs}
+
+The displacement has units of length and its large-scale part (bulk flows) is unbounded in units of $h_\ell$ as $\ell$ grows. The deformation tensor $D_{ij}=\partial_i\Psi_j$ is dimensionless, invariant under translations of $\Psi$, and its statistics on resolved scales do not depend on the grid. The detail in grid units, $d/h_f$, has a bounded amplitude controlled by the linear variance of the octave: with $P_\Psi\propto P_\lin/k^2$, the octave variance of the displacement scales as $\sigma_{\Psi,\ell}^2\propto k_\ell^{\,n+1}$ and $\sigma_{\Psi,\ell}/h_\ell\propto k_\ell^{(n+3)/2}$, a slowly varying quantity for $n>-3$. A single network acting on $(x_t-P\Psic)/h_f$ and $D_{ij}$ therefore sees inputs of the same nature at every level, and only a scalar ``how nonlinear is this level'' needs to be supplied.
+
+\subsection{Exact self-similarity in a scale-free cosmology}
+
+For $P_\lin(k)=Ak^n$ in an Einstein--de Sitter background the continuum dynamics has no intrinsic scale. The linear variance smoothed on scale $R$ is
+\begin{equation}
+\sigma^2(R,a)=D^2(a)\int\frac{\dd^3k}{(2\pi)^3}Ak^n\,\big|\tilde W(kR)\big|^2\propto a^2R^{-(n+3)} ,
+\end{equation}
+so the nonlinear scale defined by $\sigma(R_{\rm NL},a)=1$ is $R_{\rm NL}(a)\propto a^{2/(n+3)}$, and every dimensionless statistic of the evolved field depends on a length $r$ only through $r/R_{\rm NL}(a)$. For the discretised problem with grid spacing $h_\ell$ (and force softening $\propto h_\ell$) the dimensionless state of level $\ell$ at time $a$ is $h_\ell/R_{\rm NL}(a)$.
+
+\begin{proposition}[Level shift equals time shift]
+The $2\times$ step from level $\ell+1$ at expansion factor $a$ is statistically identical, for local statistics, to the step from level $\ell$ at $a'$ with $h_\ell/R_{\rm NL}(a')=h_{\ell+1}/R_{\rm NL}(a)$, i.e.
+\begin{equation}
+R_{\rm NL}(a')=2R_{\rm NL}(a)\quad\Longleftrightarrow\quad a'=2^{(n+3)/2}\,a .
+\end{equation}
+For $n=-2$, $a'=\sqrt2\,a$.
+\end{proposition}
+Going one level finer at fixed time is the same as waiting until $R_{\rm NL}$ has doubled at fixed grid. Finite-box effects break this only for the longest modes, which is why the statement is about local statistics; the operator is local, so that is enough. This gives a strict test of weight sharing and free data augmentation in scale-free simulations.
+
+\subsection{The universality hypothesis in $\Lambda$CDM}
+
+Without exact self-similarity, condition the shared operator on
+\begin{equation}
+s_\ell=\big(\sigma(h_\ell,z),\ n_{\rm eff}(k_\ell),\ f(z)\big),
+\end{equation}
+the linear rms fluctuation at the grid scale, the local slope of the linear spectrum there, and the growth rate (which fixes the velocity--displacement relation). The hypothesis, analogous to the universality of the halo mass function in $\nu=\delta_c/\sigma$, is that the $2\times$ operator depends on $(\ell,z,\text{cosmology})$ only through $s_\ell$. It is testable on the $64/128/256/512$ series by comparing transitions with matched $\sigma$.
+
+%======================================================================
+\section{Evaluation metrics}
+%======================================================================
+
+All spectra are shell averages of $|\hat a|^2$, $|\hat b|^2$ and $\mathrm{Re}(\hat a\hat b^*)$ summed over the three components, normalised as in Section~1.2, and computed separately in the coarse band ($W$) and the octave band ($1-W$).
+
+\begin{itemize}
+\item[] \emph{Cross-correlation coefficient} $r(k)=P_{ab}/\sqrt{P_{aa}P_{bb}}$ between the model output $a$ and the truth $b$. In emulator mode it measures determinism; $1-r^2$ is the fraction of power a generative model must supply.
+\item[] \emph{Power ratio} $P_{aa}/P_{bb}$: must be $1$ in generative mode; the pair $(r,P_{aa}/P_{bb})$ locates a model between the regression line $P_{aa}/P_{bb}=r^2$ and the generative line $P_{aa}/P_{bb}=1$, cf.\ \eqref{eq:r2}.
+\item[] \emph{Relative correction error} in the coarse band, $\E|\hat a-\hat b|^2/\E|\hat b|^2=(P_{aa}+P_{bb}-2P_{ab})/P_{bb}$: how well the step repairs the coarse run. Its generative-mode value exceeds its emulator-mode value because the $\eta\eta$ backreaction of Proposition~\ref{prop:k2} depends on the octave realisation.
+\item[] \emph{Wiener transfer function} $T(k)=P_{cf}/P_{ff}$ between the prolonged coarse run and the fine run. It is the isotropic linear filter that minimises $\E|T\Psif-\Psic|^2$ (standard Wiener argument: minimise a quadratic in $T$ mode by mode), i.e.\ the coarse-graining a real low-resolution run most resembles; it decides where $\alpha$ should be placed.
+\end{itemize}
+
+%======================================================================
+\section{What is proven, what is assumed, what is measured}
+%======================================================================
+
+Proven above: the operator identities of Section~2; Proposition~\ref{prop:linear}; the split \eqref{eq:eps2} including the coarse-only harmonics in the detail, Lemma~\ref{lem:kernel} and the ensemble form of Proposition~\ref{prop:k2} for the octave--octave term; the locality statement \eqref{eq:B}; the push-forward statement in its mixture form \eqref{eq:mixture} and the Markov property of the full nested chain; Theorem~\ref{thm:fm} and Proposition~\ref{prop:loss}; the information-set form of the regression identity \eqref{eq:r2}; the scale-free level--time correspondence.
+
+Idealisations to keep in view: the push-forward collapses to a single map only when the conditioning determines $\delta_c$; the reduced states actually used (projected fields, patches, finite networks) make it a mixture, and make the reduced chain Markov only approximately; with the sphere window the corner modes are re-sampled although the retained field is informative about them (the cube window avoids this); the $k^2$/$k^4$ law is for the ideal second-order octave--octave term, the mixed term is at least as suppressed, and neither higher orders nor discreteness errors are claimed to share the exponent; the ``$\vartheta$'' spectra are divergences of displacements, not Eulerian densities.
+
+Changes relative to the first version of these notes, following an external review: the real-space sign of $\Psi^{(2)}$ in \eqref{eq:psi2}; the missing $S[\delta_L]$ term in $d^{(2)}$ of \eqref{eq:eps2}; divergence versus density in Proposition~\ref{prop:k2} and Remark~\ref{rem:density}; the Wick-theorem form of the $k^4$ statement; the mixture form of the conditional and the scope of the Markov property; the removal of the claim that one-step regression necessarily loses power under full physical conditioning and of the claim that the multi-step flow ``adds back'' variance; and the recommendation of the cube window as the theoretical default.
+
+Assumed, to be tested on the real resolution series: that the discreteness floor of a real low-resolution run is small (panel (a) of Phase~0); that the conditional of the detail given the local deformation tensor is close to Gaussian outside multi-stream regions and still tractable inside them (panel (c)); that the universality in $s_\ell$ holds well enough for weight sharing (matched-$\sigma$ comparison). The toy experiments use 2LPT, which has no shell crossing; nothing in them speaks to the multi-stream regime.
+
+\section*{References}
+\begin{itemize}
+\item[] Bouchet, Colombi, Hivon, Juszkiewicz 1995, A\&A 296, 575 (2LPT conventions).
+\item[] Li, Ni, Croft, Di Matteo, Bird, Feng 2021, PNAS (AI-assisted SR I); Zhang et al.\ 2024, MNRAS 528, 281 (III); Zhang et al.\ 2024, OJAp (IV).
+\item[] Lipman, Chen, Ben-Hamu, Nickel, Le 2023, ICLR (flow matching); Tong et al.\ 2023 and Pooladian et al.\ 2023 (arbitrary couplings / minibatch OT); Albergo \& Vanden-Eijnden 2023 (stochastic interpolants).
+\item[] Guth, Coste, De Bortoli, Mallat 2022, NeurIPS, arXiv:2208.05003 (wavelet score-based generative modelling); Marchand, Ozawa, Biroli, Mallat 2022, arXiv:2207.04941; Guth, Lempereur, Bruna, Mallat 2023, arXiv:2306.00181.
+\item[] Schmidt, Cabass, Jasche, Lavaux 2018, arXiv:1803.03274; St\"ucker et al.\ 2021, MNRAS 503, 1473 (anisotropic separate universe).
+\item[] Joyce, Garrison, Eisenstein 2021, MNRAS 504, 3550 (scale-free self-similarity).
+\item[] Nishimichi, Bernardeau, Taruya 2016, PLB, arXiv:1411.2970 (response of large scales to small scales).
+\end{itemize}
+
+\end{document}

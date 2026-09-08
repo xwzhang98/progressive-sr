@@ -1,0 +1,437 @@
+% 编译：xelatex（两遍）。在 Mac 上如果没有 Noto CJK 字体，把第一行改成
+%   \documentclass[11pt,UTF8,fontset=mac]{ctexart}
+% 并删掉下面两行 \setCJKmainfont / \setCJKsansfont 即可。
+\documentclass[11pt,UTF8,fontset=none]{ctexart}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black}
+\usepackage{enumitem}
+
+\newcommand{\q}{\mathbf{q}}
+\newcommand{\kk}{\mathbf{k}}
+\newcommand{\x}{\mathbf{x}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Cov}{\operatorname{Cov}}
+\newcommand{\Ny}{{\rm Ny}}
+\newcommand{\PW}{\mathcal P_W}
+\newcommand{\Sim}{\mathcal S}
+
+\newenvironment{box*}{\begin{quote}\itshape}{\end{quote}}
+
+\title{Progressive $2\times$ 超分辨的物理推导\\ \large 面向物理 PhD 的版本：从采样定理、Zel'dovich 和 2LPT 一路算到 flow matching}
+\author{为张潇文准备}
+\date{2026 年 9 月 8 日（v2，审阅后修订）}
+
+\begin{document}
+\maketitle
+
+\section*{读法}
+
+这份笔记和上一份的内容相同，但写法不同：不设定理，每一步都是"把这个代进去、展开、看极限"，先一维再三维，公式旁边给物理解释。需要的数学只有：Fourier 级数与几何级数求和、高斯随机场与功率谱（$\langle\hat\delta\hat\delta^*\rangle$、Wick）、Zel'dovich 与 2LPT、条件期望和 tower property $\E[\E[X\mid Y]]=\E[X]$、以及一阶常微分方程。标着"自己算"的地方是建议你亲手做一遍的。
+
+全文的记号：盒长 $L$，周期边界。粗网格（coarse, 下标 $c$）每维 $N$ 个点、格距 $h_c=L/N$；细网格（fine, 下标 $f$）每维 $2N$ 个点、格距 $h_f=h_c/2$。格点位置 $q_j=(j+o)h$，$o\in\{0,\tfrac12\}$ 是初条件生成器的网格约定。位移场 $\Psi(\q)$ 定义在初始网格上，粒子现在的位置是 $\x=\q+\Psi(\q)$。
+
+%======================================================================
+\section{一维热身：采样、aliasing、粗细网格}
+%======================================================================
+
+\subsection{环上的 Fourier 级数}
+
+长度为 $L$ 的环上的函数 $g(x)$ 展开为
+\begin{equation}
+g(x)=\frac1L\sum_{m\in\mathbb Z}\hat g_m\,e^{ik_mx},\qquad k_m=\frac{2\pi m}{L},\qquad \hat g_m=\int_0^L g(x)e^{-ik_mx}\,\dd x .
+\label{eq:fs}
+\end{equation}
+两个函数的乘积在 Fourier 空间是卷积，带一个 $1/L$：$\widehat{(g_1g_2)}_m=\frac1L\sum_{m_1+m_2=m}\hat g_{1,m_1}\hat g_{2,m_2}$（把两个级数相乘、合并指数即可）。对一个统计均匀的随机场，$\langle\hat g_m\hat g_{m'}^*\rangle=L\,P(k_m)\,\delta_{mm'}$ 定义功率谱；三维时把 $L$ 换成 $L^3$。
+
+\subsection{采样与几何级数：aliasing 公式}
+
+在 $N$ 个点 $x_j=(j+o)h$（$h=L/N$）上采样，并按 \texttt{numpy.fft} 的约定做离散变换，注意相位是对整数指标 $j$ 而不是对物理位置 $x_j$ 取的：
+\begin{equation}
+G_m:=\sum_{j=0}^{N-1}g(x_j)\,e^{-ik_m jh}.
+\end{equation}
+把 \eqref{eq:fs} 代进去：
+\begin{equation}
+G_m=\frac1L\sum_{m'}\hat g_{m'}\,e^{ik_{m'}oh}\sum_{j=0}^{N-1}e^{i(k_{m'}-k_m)jh}.
+\end{equation}
+里面那个和是几何级数。因为 $(k_{m'}-k_m)h=2\pi(m'-m)/N$，
+\begin{equation}
+\sum_{j=0}^{N-1}e^{2\pi i(m'-m)j/N}=\begin{cases}N,& m'-m\in N\mathbb Z,\\ 0,&\text{否则}.\end{cases}
+\end{equation}
+于是
+\begin{equation}
+\boxed{\;G_m=\frac{N}{L}\sum_{n\in\mathbb Z}\hat g_{m+nN}\,e^{ik_{m+nN}oh}\;}
+\label{eq:alias}
+\end{equation}
+这就是 aliasing：第 $m+nN$ 个模式在采样后和第 $m$ 个模式无法区分，它们相差的波数 $nN k_1=2n\pi/h$ 恰好是 Nyquist 波数 $k_\Ny=\pi/h$ 的偶数倍。
+
+\textbf{采样定理。}如果 $g$ 是带限的，即 $\hat g_{m'}=0$ 当 $|m'|\ge N/2$，那么 \eqref{eq:alias} 里只剩 $n=0$：
+\begin{equation}
+G_m=\frac1h\,e^{ik_moh}\,\hat g_m,\qquad |m|<N/2 .
+\label{eq:dft1d}
+\end{equation}
+采样没有丢任何信息，反过来可以精确重建 $g(x)=\frac hL\sum_{|m|<N/2}G_me^{-ik_moh}e^{ik_mx}$。这就是"带限函数由 Nyquist 频率以上的采样完全决定"。$N$ 是偶数时 $m=\pm N/2$ 这个 Nyquist 模式只能被表示成一个实的余弦，为了不处理这个特例，我们规定带限的意思是 $|m|<N/2$ 严格成立，代码里把 Nyquist 平面直接置零。
+
+\subsection{两套网格看同一个带限函数}
+
+设 $g$ 对粗网格是带限的（$|m|<N/2$），它当然也对细网格带限。对两套网格分别用 \eqref{eq:dft1d}：
+\begin{equation}
+G^c_m=\frac{1}{h_c}e^{ik_moh_c}\hat g_m,\qquad G^f_m=\frac{1}{h_f}e^{ik_moh_f}\hat g_m
+\quad\Longrightarrow\quad
+\boxed{\;G^c_m=\frac{h_f}{h_c}\,e^{ik_mo(h_c-h_f)}\,G^f_m=\frac12\,e^{ik_moh_f}\,G^f_m\;}
+\label{eq:cf1d}
+\end{equation}
+读法：把细网格的 DFT 系数原样搬到粗网格的 DFT 数组里（细网格多出来的高频槽位扔掉），乘 $\tfrac12$，再乘一个相位 $e^{ik_moh_f}$。$o=0$ 时相位是 1，因为粗格点是细格点的子集；$o=\tfrac12$ 时粗格点在两个细格点正中间，差半个细格，这个相位就是那半个细格的平移。三维时因子是 $\tfrac18$，相位是 $e^{i\kk\cdot\mathbf 1\,oh_f}$，因为每一维各出一个因子。这就是代码里 \texttt{restrict\_spectral} 的 \texttt{(Nc/Nf)**3} 和 \texttt{conj(phase)}。
+
+\begin{box*}
+自己算：取单个模式 $g=e^{ikx}$，$o=\tfrac12$，粗格点 $x^c_j=(2j+1)h_f$，直接写出 $G^c$ 和 $G^f$ 验证 \eqref{eq:cf1d}。
+\end{box*}
+
+\subsection{Restriction、prolongation 和投影}
+
+现在定义两个算子。$P$（prolongation，粗到细）：把粗网格 DFT 系数按 \eqref{eq:cf1d} 的逆搬到细网格数组里，其余槽位填零（zero padding），反变换得到细格点上的值。由采样定理，这就是"把粗网格上的数看成一个带限函数，在细格点上精确插值"。$R$（restriction，细到粗）：细网格 DFT，只保留一个指示函数 $W_m\in\{0,1\}$ 选中的模式（$W_m=1$ 的模式必须都在粗网格能表示的范围 $|m|<N/2$ 里），按 \eqref{eq:cf1d} 搬到粗网格数组，反变换。
+
+两条一行就能验证的性质：
+\begin{align}
+RP&=\text{恒等}\quad\text{（在 $W$ 选中的模式上）：}\ \text{搬过去再搬回来，因子 $\tfrac12\cdot2$、相位 $e^{-i\ldots}e^{+i\ldots}$ 都抵消。}\\
+PR&=\PW\quad\text{（在细网格上）：}\ \text{保留 $W_m=1$ 的模式、杀掉其余，即 Fourier 乘子 $W_m$。}
+\end{align}
+$\PW$ 是投影，因为 $W_m^2=W_m$；它是正交投影，因为 Parseval $\sum_j|g(x_j)|^2=\frac1N\sum_m|G_m|^2$ 告诉我们不同模式正交。于是任何细场唯一地分成两块：
+\begin{equation}
+\boxed{\;\Psi_f=\underbrace{P\,(R\Psi_f)}_{\text{$W$ 选中的模式，粗网格能表示}}+\underbrace{(I-\PW)\Psi_f}_{=:\,d,\ \text{细节：其余模式}}\;}
+\label{eq:decomp}
+\end{equation}
+而且两块正交。$W$ 的两个选择：立方体（$|k_j|<k_{\Ny,c}$ 对每个 $j$）或球（$|\kk|<\alpha k_{\Ny,c}$，$\alpha\le1$）。\textbf{默认用立方体}：什么都不丢，链的状态就是粗数组本身，第 2 节的 nested IC 分解和模型的分解完全重合，后面关于"新随机性"的每一句话都是精确的。球的诱惑在于各向同性，而且粗立方体角落里那些 $|\kk|$ 最大的模式（$\alpha=1$ 时占粗模式的 $1-\pi/6\approx48\%$）是低分辨率模拟分辨得最差的；但用球意味着先把输入投影一次 $\Psi_c\leftarrow\PW\Psi_c$，再把角落当作新随机性重新生成——这是一个近似：角落模式 $\chi$ 在初条件里确实独立，但粗模拟球内的非线性输出 $\PW\Sim_c[\delta_W+\chi]$ 通过模式耦合带着 $\chi$ 的信息，$p(\chi\mid\PW\Psi_c)\neq p(\chi)$。精确的做法是把角落留在状态里、交给修正带去修。球应当作为一个对照实验，而不是理论基线。\textbf{$W$ 必须是 0/1 的指示函数}：换成平滑窗，$W^2\neq W$，$PR$ 就不是投影，$RP\neq I$，粗、细两块在过渡带里重叠。
+
+有了这些，一个 $2\times$ 步骤的任务就清楚了。给定粗模拟 $\Psi_c$（用球时是投影过的），定义
+\begin{equation}
+\varepsilon:=R\Psi_f-\Psi_c\quad(\text{粗场修正}),\qquad \Psi_f=P(\Psi_c+\varepsilon)+d .
+\label{eq:eps}
+\end{equation}
+$\varepsilon$ 和 $d$ 都是同一个细网格残差 $\Psi_f-P\Psi_c$ 的一部分：$\varepsilon$ 是它 $W$ 带内的部分，$d$ 是带外的部分。所以模型只需要一个细网格上的输出，"两个头"只是同一个输出的两个频带。
+
+\subsection{对比：Haar（块平均）为什么不好}
+
+Haar 把每两个相邻细格点取平均当作粗格点的值。取 $o=\tfrac12$，粗点在块中心，对单个模式
+\begin{equation}
+\tfrac12\Big[e^{ik(x_c-h_f/2)}+e^{ik(x_c+h_f/2)}\Big]=\cos\!\Big(\frac{kh_f}{2}\Big)e^{ikx_c}.
+\end{equation}
+三维是三个 $\cos$ 的乘积。这说明两件事：本该原样保留的粗带模式被乘了 $\cos(kh_f/2)\approx1-(kh_f)^2/8$，是一个确定性的失配；细网格才有的高频模式经过 $\cos$ 衰减后仍然不为零（只在细 Nyquist 处为零），所以它们按 \eqref{eq:alias} 折叠回粗带，是一个随机的污染。$o=0$ 时块中心比粗点多偏半个细格，还额外多一个相位 $e^{ikh_f/2}\approx1+ikh_f/2$，失配从 $O(k^2)$ 变成 $O(k)$。后面会看到，谱型的 $R$ 在线性阶根本没有这两项。
+
+\begin{box*}
+自己算：位移功率谱 $P_\Psi\propto k^{n-2}$（$n=-1.5$）时，Haar 的 $\varepsilon$ 在低 $k$ 的功率谱斜率，$o=\tfrac12$ 是 $4+(n-2)=+0.5$，$o=0$ 是 $2+(n-2)=-1.5$。自测量到 $+0.6$ 和 $-1.7$。
+\end{box*}
+
+%======================================================================
+\section{高斯初条件、nested IC 与线性理论}
+%======================================================================
+
+\subsection{高斯随机场的三句话}
+
+线性密度场 $\delta$ 是高斯随机场：每个 Fourier 系数 $\hat\delta(\kk)$ 是独立的复高斯变量（受实性条件 $\hat\delta(-\kk)=\hat\delta(\kk)^*$ 约束），$\langle\hat\delta(\kk)\hat\delta^*(\kk')\rangle=L^3P_{\rm lin}(k)\delta_{\kk\kk'}$，所有高阶矩由 Wick 定理决定。"独立"是关键词：不同 $\kk$ 的系数之间没有任何统计关系。
+
+\subsection{Nested IC}
+
+初条件生成器对第 $\ell$ 级只生成 $|k_j|<k_{\Ny,\ell}$ 的模式，并且同一个 $\kk$ 在所有级别用同一个随机数。所以
+\begin{equation}
+\delta_f=\delta_c+\eta,\qquad \hat\delta_c=W_{\rm cube}\hat\delta_f,\qquad \hat\eta=(1-W_{\rm cube})\hat\delta_f,
+\end{equation}
+$\eta$（我叫它 octave）由细立方体减去粗立方体里的模式组成，是一批和 $\delta_c$ 完全独立的高斯随机数。每个分量数一数：$(2N)^3-N^3=7N^3$ 个模式，正好等于每个粗格子里新增的 7 个细粒子。
+
+\subsection{Zel'dovich}
+
+线性阶的连续性方程加 Poisson 方程给出 $\Psi^{(1)}=-D\nabla\phi$，$\nabla^2\phi=\delta$（$\delta$ 归一到今天，$D$ 是增长因子）。Fourier 空间：
+\begin{equation}
+\hat\phi=-\frac{\hat\delta}{k^2},\qquad \hat\Psi^{(1)}(\kk)=D\,\frac{i\kk}{k^2}\hat\delta(\kk),\qquad \nabla\cdot\Psi^{(1)}=-D\delta .
+\label{eq:zel}
+\end{equation}
+速度是 $\dot D$ 替换 $D$。注意 $\hat\Psi^{(1)}(\kk)$ 只依赖同一个 $\kk$ 的 $\hat\delta(\kk)$：Zel'dovich 是一个 Fourier 乘子，和任何谱投影可交换。
+
+\subsection{线性阶的两个结论}
+
+把 \eqref{eq:zel} 代进 \eqref{eq:eps} 和 \eqref{eq:decomp}，逐模式看。对 $W$ 选中的模式 $\kk$（它们都在粗立方体里）：
+\begin{equation}
+\big(R\Psi^{(1)}_f\big)(\kk)=D\frac{i\kk}{k^2}\hat\delta_f(\kk)=D\frac{i\kk}{k^2}\hat\delta_c(\kk)=\big(\PW\Psi^{(1)}_c\big)(\kk)
+\quad\Longrightarrow\quad \varepsilon^{(1)}\equiv0 .
+\end{equation}
+对 $W$ 之外的模式：
+\begin{equation}
+\hat d^{(1)}(\kk)=D\frac{i\kk}{k^2}\hat\delta_f(\kk),\qquad \text{只含 octave 的模式（若 $W$ 是球，再加粗立方体的角落）}.
+\end{equation}
+所以在线性阶，粗场修正精确为零，细节是一个功率谱已知（$D^2P_{\rm lin}/k^2$，纵向）的高斯场，并且与粗场统计独立，因为它们用的是不相交的两组独立高斯数。
+
+这两句话决定了模型的两个设计：线性阶的细节应该直接写进模型而不是让网络学（模型的"起点"已经包含 $D\,i\kk\hat\eta/k^2$）；网络注入的随机数应该就是 octave 的初条件 $\eta$ 本身，而不是无名的噪声。
+
+%======================================================================
+\section{二阶：粗场修正为什么小，细节怎么依赖粗场}
+%======================================================================
+
+\subsection{2LPT 回顾}
+
+你推过的结果（Bouchet 等 1995 的约定），$D=1$：
+\begin{equation}
+\Psi=-\nabla\phi^{(1)}+D_2\nabla\phi^{(2)},\qquad D_2\simeq-\tfrac37,\qquad
+\nabla^2\phi^{(2)}=S:=\sum_{i>j}\Big[\phi^{(1)}_{,ii}\phi^{(1)}_{,jj}-\big(\phi^{(1)}_{,ij}\big)^2\Big].
+\end{equation}
+把 $S$ 写成更好用的形式（展开 $(\sum_i\phi_{,ii})^2$ 和 $\phi_{,ij}\phi_{,ij}$，对角项抵消）：
+\begin{equation}
+S=\tfrac12\Big[(\nabla^2\phi)^2-\phi_{,ij}\phi_{,ij}\Big]=\lambda_1\lambda_2+\lambda_2\lambda_3+\lambda_3\lambda_1,
+\label{eq:S}
+\end{equation}
+$\lambda_i$ 是 $\phi_{,ij}$ 的本征值。以后省略上标 $(1)$。二阶位移是 $S$ 的势的梯度。注意 $\nabla^{-2}$ 的 Fourier 乘子是 $-1/k^2$，所以实空间和 Fourier 空间的写法差一个符号：
+\begin{equation}
+\Psi^{(2)}=D_2\nabla\nabla^{-2}S=-\tfrac37\nabla\nabla^{-2}S,\qquad
+\hat\Psi^{(2)}(\kk)=D_2\,i\kk\,\hat\phi^{(2)}=-D_2\frac{i\kk}{k^2}\hat S(\kk)=+\frac37\frac{i\kk}{k^2}\hat S(\kk).
+\label{eq:psi2}
+\end{equation}
+（第一版笔记的实空间式子丢了这个负号。）下面把"源项 $\to$ 二阶位移"这个线性算子记作 $\mathcal T_2:=D_2\nabla\nabla^{-2}$。
+$S$ 的 Fourier 形式：用 $\hat\phi_{,ij}=-k_ik_j\hat\phi=k_ik_j\hat\delta/k^2$ 和卷积公式，
+\begin{equation}
+\hat S(\kk)=\frac{1}{2L^3}\sum_{\kk_1+\kk_2=\kk}K(\kk_1,\kk_2)\,\hat\delta(\kk_1)\hat\delta(\kk_2),\qquad
+K(\kk_1,\kk_2)=1-\frac{(\kk_1\cdot\kk_2)^2}{k_1^2k_2^2}.
+\label{eq:kernel}
+\end{equation}
+
+\subsection{长短波分解}
+
+写 $\delta_f=\delta_L+\eta$，$\delta_L=\delta_c$。$S$ 是 $\phi$ 的二次型，代入 $\phi=\phi_L+\phi_\eta$ 展开平方：
+\begin{equation}
+S[\delta_L+\eta]=S[\delta_L]+S[\eta]+B(\delta_L,\eta),\qquad
+B(\delta_L,\eta)=\nabla^2\phi_L\,\nabla^2\phi_\eta-\phi_{L,ij}\,\phi_{\eta,ij}.
+\label{eq:split}
+\end{equation}
+（$\tfrac12[(a+b)^2-(A+B)_{ij}(A+B)_{ij}]$ 的交叉项，$\tfrac12$ 被 2 抵消。）粗模拟如果对带限输入 $\delta_L$ 精确求解连续方程，会给出 $\Psi^{(2)}_c=\mathcal T_2S[\delta_L]$；细模拟给出 $\Psi^{(2)}_f=\mathcal T_2\big[S[\delta_L]+B+S[\eta]\big]$。分别用 $\PW$ 和 $I-\PW$ 投影：
+\begin{equation}
+\boxed{\;\varepsilon^{(2)}=\PW\,\mathcal T_2\Big[B(\delta_L,\eta)+S[\eta]\Big],\qquad
+d^{(2)}=(I-\PW)\,\mathcal T_2\Big[S[\delta_L]+B(\delta_L,\eta)+S[\eta]\Big]\;}
+\label{eq:eps2}
+\end{equation}
+$S[\delta_L]$ 只在\textbf{修正}里抵消（两个模拟在粗带里都有它），在\textbf{细节}里并不消失：两个粗带模式可以相加成一个粗带之外的模式。举个具体例子，以 $k_F$ 为单位、粗截止为 4：$\mathbf p=(3,2,0)$ 和 $\mathbf q=(3,-2,0)$ 都在粗立方体里，$\mathbf p+\mathbf q=(6,0,0)$ 在粗立方体外、细立方体内，而 $K(\mathbf p,\mathbf q)=1-25/169=144/169\neq0$。所以哪怕 $\eta\equiv0$，细节也不为零。这意味着细节里有一部分是粗初条件的确定性函数（粗模式的非线性"谐波"），另一部分才由 octave 驱动；模型既然以粗场为条件，两部分它都会产出，但"细节就是新注入的随机性"这句话只在线性阶成立。剩下两项：$S[\eta]$ 是"小尺度对大尺度的反作用"，$B$ 是长短波耦合。
+
+\subsection{$S$ 是一个二阶散度：$k^2$ 定律的物理来源}
+
+这是整份笔记里最值得亲手算的一段。用乘积法则把 $S$ 写成全导数：
+\begin{equation}
+\partial_i\big[\phi_{,i}\,\phi_{,jj}-\phi_{,j}\,\phi_{,ij}\big]
+=\phi_{,ii}\phi_{,jj}+\phi_{,i}\phi_{,jji}-\phi_{,ij}\phi_{,ij}-\phi_{,j}\phi_{,iij}.
+\end{equation}
+后两项 $\phi_{,i}\partial_i(\nabla^2\phi)$ 和 $\phi_{,j}\partial_j(\nabla^2\phi)$ 是同一个东西（哑指标），抵消。所以
+\begin{equation}
+S=\partial_iJ_i,\qquad J_i=\tfrac12\big[\phi_{,i}\nabla^2\phi-\phi_{,j}\phi_{,ij}\big].
+\end{equation}
+再来一次。$\phi_{,j}\phi_{,ij}=\tfrac12\partial_i(\phi_{,j}\phi_{,j})$，而 $\phi_{,i}\nabla^2\phi=\partial_j(\phi_{,i}\phi_{,j})-\phi_{,ij}\phi_{,j}=\partial_j(\phi_{,i}\phi_{,j})-\tfrac12\partial_i(\phi_{,j}\phi_{,j})$。代回去：
+\begin{equation}
+J_i=\partial_jT_{ij},\qquad
+\boxed{\;S=\partial_i\partial_jT_{ij},\qquad T_{ij}=\tfrac12\Big(\phi_{,i}\phi_{,j}-\delta_{ij}\,|\nabla\phi|^2\Big).\;}
+\label{eq:stress}
+\end{equation}
+二阶的源项是一个由引力场 $\nabla\phi$ 构成的"应力张量"的二阶散度——和牛顿引力的 Maxwell 型应力张量是同一个结构。物理上这是动量守恒：一个区域内部的物质再怎么重新排列，对外的净作用只能通过边界上的应力传出去。
+
+Fourier 变换（$\partial_i\partial_j\to-k_ik_j$）：
+\begin{equation}
+\hat S(\kk)=-k_ik_j\,\hat T_{ij}(\kk).
+\end{equation}
+把 $\eta\eta$ 那一项单独拿出来看小 $k$ 极限。对每一个实现，$\hat S_{\eta\eta}(\kk)=-k_ik_j\hat T^{\eta\eta}_{ij}(\kk)$，其中 $\hat T^{\eta\eta}_{ij}(\kk)$ 是两个 octave 模式的卷积，在 $k\ll k_{\Ny,c}$ 时是一个方差与 $k$ 无关的随机变量（它的均值是各向同性常数，$\kk=0$ 处就是小尺度场应力在整个盒子上的积分）。于是
+\begin{equation}
+\hat S_{\eta\eta}(\kk)=-k_ik_j\hat T^{\eta\eta}_{ij}=O(k^2),\qquad
+\hat\Psi^{(2)}_{\eta\eta}=\frac37\frac{i\kk}{k^2}\hat S_{\eta\eta}=-\frac37\,i\kk\,\hat k_i\hat k_j\hat T^{\eta\eta}_{ij}=O(k).
+\end{equation}
+把"$O(k^2)$"说成功率谱的语言要用 Wick 定理：$\hat S=\frac12\int K\hat\eta\hat\eta$ 的两点函数有两个收缩、核对称，所以
+\begin{align}
+P_{S_{\eta\eta}}(k)&=\frac12\int\frac{\dd^3p}{(2\pi)^3}K^2(\mathbf p,\kk-\mathbf p)\,P_\eta(p)P_\eta(|\kk-\mathbf p|)\nonumber\\
+&=k^4\cdot\frac12\int\frac{\dd^3p}{(2\pi)^3}\frac{(1-\mu_p^2)^2}{|\kk-\mathbf p|^4}P_\eta(p)P_\eta(|\kk-\mathbf p|)\ \to\ Ck^4 ,
+\end{align}
+第二个等号用了下面的精确恒等式 \eqref{eq:Kexact}，剩下的积分在远离原点的一个频带上、收敛到常数 $C$。再记 $\vartheta:=-\nabla\cdot\Psi$ 为位移的散度（注意：它\textbf{不是}完整的二阶 Eulerian 密度，见下面的说明），$\hat\vartheta^{(2)}=\frac37\hat S$，就得到
+\begin{equation}
+\boxed{\;P_{\Psi^{(2)}_{\eta\eta}}(k)=\Big(\tfrac37\Big)^2\frac{P_{S_{\eta\eta}}}{k^2}\propto k^2,\qquad
+P_{\vartheta^{(2)}_{\eta\eta}}(k)=\Big(\tfrac37\Big)^2P_{S_{\eta\eta}}\propto k^4,\qquad k\ll k_{\Ny,c}.\;}
+\end{equation}
+这就是 Peebles 的 $k^4$ 尾巴，在 Lagrangian 语言里是"小尺度对大尺度的反作用被动量守恒压低"。自测在去 aliasing 的 2LPT 层级上量到球壳平均的斜率 $2.19$（位移）和 $4.14$（散度）。
+
+三个限定。第一，混合项 $B(\delta_L,\eta)$ 带同样的核因子，但能相加成小 $\kk$ 的 $(\kk_L,\kk_\eta)$ 对必须都落在截止面附近厚度 $\sim k$ 的壳层里，相空间也随 $k$ 缩小，所以它的低 $k$ 功率至少和 $\eta\eta$ 项一样陡；低 $k$ 修正由 $S[\eta]$ 主导。第二，这是理想的、去 aliasing 的二阶结果；更高阶的确定性响应和真实粗模拟的离散性误差不必共享这个指数。第三，散度 $\vartheta$ 和 Eulerian 密度是两个场。质量守恒给出 $\hat\delta_E(\kk)=\int\dd^3q\,e^{-i\kk\cdot\q}[e^{-i\kk\cdot\Psi(\q)}-1]$，展开到二阶是 $\hat\delta^{(2)}_E=-ik_i\hat\Psi^{(2)}_i-\tfrac12k_ik_j\widehat{\Psi^{(1)}_i\Psi^{(1)}_j}$，第二项（一阶位移改变了质量元的间距）在 $\vartheta^{(2)}$ 里没有。两项合起来就是 Eulerian 微扰论的 $F_2$ 核，它在 $\kk\to0$（$\mathbf p$ 固定）时也是 $O(k^2)$，所以真实密度的 $\eta\eta$ 部分同样有 $k^4$ 压低，但那是另一个计算。代码里的"散度谱"就是 $\vartheta$；粒子沉积得到的密度谱是另一个诊断量。
+
+\textbf{用 Fourier 核再验一遍。}$K$ 的分子分母：$k_1^2k_2^2-(\kk_1\cdot\kk_2)^2=|\kk_1\times\kk_2|^2$，而 $\kk_2=\kk-\kk_1$ 给 $\kk_1\times\kk_2=\kk_1\times\kk$，所以
+\begin{equation}
+K(\kk_1,\kk-\kk_1)=\frac{k_1^2k^2\sin^2\theta_1}{k_1^2k_2^2}=\frac{k^2\,(1-\mu_1^2)}{|\kk-\kk_1|^2},\qquad \mu_1=\hat\kk\cdot\hat\kk_1 ,
+\label{eq:Kexact}
+\end{equation}
+一个精确恒等式。$\eta\eta$ 项里 $|\kk-\kk_1|\ge k_{\Ny,c}$，所以 $\hat S_{\eta\eta}=k^2\times(\text{方差与 }k\text{ 无关的量})$，和应力张量的结论一致。$1-\mu_1^2$ 的角度依赖就是 $\hat k_i\hat k_j\hat T_{ij}$ 里的各向异性。
+
+\begin{box*}
+自己算：(1) 从 \eqref{eq:stress} 出发在 Fourier 空间展开 $-k_ik_j\hat T_{ij}$，用 $\kk=\kk_1+\kk_2$ 化简，证明它等于 \eqref{eq:kernel}。(2) 用 $\epsilon=k/k_1$ 展开 $(1-\epsilon\mu)^2/(1-2\epsilon\mu+\epsilon^2)$ 得到 \eqref{eq:Kexact} 的另一种推法。
+\end{box*}
+
+\textbf{离散性的 caveat。}\eqref{eq:eps2} 的修正项里 $S[\delta_L]$ 的抵消假设粗模拟没有 aliasing 地算出了二次项。网格代码在自己的网格上算乘积，两个接近 $k_{\Ny,c}$ 的模式相乘的支撑到 $2k_{\Ny,c}$，按 \eqref{eq:alias} 折回低 $k$，而核是在大波数处取值的，没有 $k^2$ 压低。真实 N-body 有自己的版本（PM 网格 aliasing、力软化、时间步）。经验上它是一个幅度很小的白噪底，Phase 0 的面板 (a) 在真实 64/128/256/512 上量的就是它。
+
+\subsection{长短波耦合：细节只通过粗场的 deformation tensor 进来}
+
+\eqref{eq:split} 的交叉项在实空间是逐点乘积。定义 deformation tensor $D_{ij}:=\partial_i\Psi_j$，一阶时 $D^{(1)}_{ij}=-\phi_{,ij}$，$\tr D^{(1)}=-\delta$。于是
+\begin{equation}
+B(\delta_L,\eta)(\q)=\tr D^L(\q)\,\tr D^\eta(\q)-D^L_{ij}(\q)\,D^\eta_{ij}(\q).
+\label{eq:B}
+\end{equation}
+把 $D^L$ 分成迹和无迹部分，$D^L_{ij}=-\tfrac13\delta_L\delta_{ij}+\tau^L_{ij}$：
+\begin{equation}
+B=-\tfrac23\,\delta_L\,\tr D^\eta-\tau^L_{ij}D^\eta_{ij}.
+\end{equation}
+第一项：局部过密区里小尺度模式长得更快，就是 separate-universe 的图像；第二项：潮汐场 $\tau^L$ 和小尺度形变的耦合，就是 anisotropic separate-universe 模拟测的响应。要点有两个。一是\textbf{局域}：粗场在 $\q$ 点的 $D_{ij}$ 决定 $\q$ 点的源，非局域只来自后面那个 $\nabla\nabla^{-2}$ 的势求解。二是\textbf{只通过导数}：粗场加一个常数位移（整体平移）不改变任何东西。
+
+所以网络的输入不是 $\Psi_c$，而是 $D_{ij}(P\Psi_c)$ 的九个分量（无量纲、平移不变），外加以 $h_f$ 为单位的残差。
+
+%======================================================================
+\section{给定粗场，细场是什么分布}
+%======================================================================
+
+记 $\Sim_\ell$ 为第 $\ell$ 级模拟代码从线性初条件到输出 $(\Psi_\ell,\mathbf v_\ell)$ 的映射，它是确定性的。记 $C$ 为我们实际拿来做条件的那个粗输出。如果 $C$ 决定 $\delta_c$（比如 $C$ 是完整的相空间输出 $(\Psi_c,\mathbf v_c)$，而且 $\Sim_c$ 可逆，这是初条件重建那一行工作的前提），那么给定 $C$ 就等于给定 $\delta_c$，而
+\begin{equation}
+\Psi_f=\Sim_f[\delta_c+\eta],\qquad \eta\sim\text{高斯},\ \text{与 }\delta_c\text{ 独立}.
+\end{equation}
+用你熟悉的语言：$p(\Psi_f\mid C)$ 是一个已知高斯分布（$7N^3$ 个标量自由度）在映射 $\eta\mapsto\Sim_f[\delta_c+\eta]$ 下的 push-forward。不假设 $C$ 决定 $\delta_c$ 时，正确的写法是一个混合：
+\begin{equation}
+p(\Psi_f\in A\mid C)=\int\!\!\int\mathbb 1_A\big(\Sim_f[\delta_c+\eta]\big)\,\gamma(\dd\eta)\,p(\dd\delta_c\mid C),
+\label{eq:mixture}
+\end{equation}
+$\gamma$ 是 octave 的高斯分布，$p(\delta_c\mid C)$ 是给定 $C$ 后粗初条件还剩多少不确定。
+
+这个区别不是吹毛求疵，因为模型实际用的状态是一路缩减的：$(\Psi_c,\mathbf v_c)\to\Psi_c\to\PW\Psi_c\to$ 网络有限感受野看到的一小块 $D_{ij}(P\Psi_c)$。完整映射可逆，不代表这些缩减后的观测还能反推出 $\delta_c$。诚实的描述就是 \eqref{eq:mixture}，只有理想情形它才退化成单个 push-forward。两个后果。一是一个 $2\times$ 步骤要提供的随机性是 octave \textbf{加上}缩减条件没能定下来的那部分 $\delta_c$，只有前者有干净的高斯形式。二是用球窗时被丢掉的角落模式 $\chi$ 属于 $\delta_c$，保留的场对它有信息，按先验重新采样是近似（第 1.4 节）；用立方体没有这个问题。
+
+再往下一级，$\Psi_{\ell+1}$ 决定 $\delta_{\ell+1}\supset\delta_\ell$ 时，$p(\Psi_{\ell+2}\mid\Psi_{\ell+1},\Psi_\ell)=p(\Psi_{\ell+2}\mid\Psi_{\ell+1})$：\textbf{完整状态}的逐级链是精确的 Markov 链，一步步乘起来就是 $p(\Psi_L\mid\Psi_0)$。缩减状态（投影场、patch）上的链只有在缩减是充分统计量时才是 Markov 的，否则前几级带着当前状态已经丢掉的信息，链上用的单步条件分布是一个建模近似。这也是保留立方体窗、并且最终把速度场放进状态的理由之一。
+
+两个后果。随机性有物理身份、维数已知：模型的噪声就取 $\eta$，训练时用真实的 $\eta$（Paper IV 的设定，逐级化），采样时换随机的 $\eta$（生成模型）。在理想条件下（$C$ 决定 $\delta_c$）$\Psi_f$ 是 $(C,\eta)$ 的确定性函数：一个完美的回归模型喂真实 $\eta$ 就精确，喂随机 $\eta$ 就是合法的生成模型。混沌在精确算术下不改变这一点（一个初条件只有一个结果）；它改变的是有限容量、有限感受野、有限数据的模型实际能用上 $(\delta_c,\eta)$ 里的多少信息，以及真实代码里舍入误差被放大得多快。下一节的 flow matching 的写法保证了它在生成模式下的正确性不依赖于回归是否精确。
+
+%======================================================================
+\section{Flow matching：从一个能手算的例子开始}
+%======================================================================
+
+\subsection{一维高斯例子}
+
+先把所有场论忘掉，看两个一维高斯变量。$x_0\sim\mathcal N(0,\sigma_0^2)$，$x_1\sim\mathcal N(0,\sigma_1^2)$，相关系数 $\rho$（$\rho=0$ 是独立配对，$\rho>0$ 是"物理配对"）。目标：找一个变换把 $x_0$ 的样本变成 $x_1$ 分布的样本。
+
+Flow matching 的做法：连一条直线 $x_t=(1-t)x_0+tx_1$，沿线速度 $x_1-x_0$，定义
+\begin{equation}
+u_t(x):=\E\big[x_1-x_0\ \big|\ x_t=x\big].
+\end{equation}
+高斯情形条件期望是线性回归：$u_t(x)=\dfrac{\Cov(x_1-x_0,\,x_t)}{\Var(x_t)}\,x$。算两个量：
+\begin{align}
+s_t^2:=\Var(x_t)&=(1-t)^2\sigma_0^2+t^2\sigma_1^2+2t(1-t)\rho\sigma_0\sigma_1,\\
+\Cov(x_1-x_0,x_t)&=t\sigma_1^2-(1-t)\sigma_0^2+(1-2t)\rho\sigma_0\sigma_1=\tfrac12\frac{\dd s_t^2}{\dd t}.
+\end{align}
+（最后一个等号请自己验证。）所以 $u_t(x)=\dfrac{\dot s_t}{s_t}\,x$，常微分方程 $\dot x=u_t(x)$ 的解是
+\begin{equation}
+x(t)=x(0)\,\frac{s_t}{s_0}\quad\Longrightarrow\quad x(1)=x_0\,\frac{\sigma_1}{\sigma_0}.
+\end{equation}
+从 $x_0\sim\mathcal N(0,\sigma_0^2)$ 出发，终点的方差恰好是 $\sigma_1^2$：变换对了。注意三件事。第一，$\rho$ 从最后的答案里消失了：\textbf{coupling 不影响生成出来的分布}，这是下一小节一般定理的一维版本。第二，$\rho$ 影响的是训练难度：网络要拟合的目标 $x_1-x_0$ 的方差是 $\sigma_0^2+\sigma_1^2-2\rho\sigma_0\sigma_1$，$\rho$ 越大目标越"确定"，路径越短。第三，如果只走一步 Euler，$\hat x_1=x_0+u_0(x_0)=\E[x_1\mid x_0]=\rho\dfrac{\sigma_1}{\sigma_0}x_0$，它的方差是 $\rho^2\sigma_1^2$ 而不是 $\sigma_1^2$：一步等于给定 $x_0$ 的条件均值，$x_0$ 没定下来的那 $(1-\rho^2)$ 的方差就丢了。注意这是 $\rho<1$、即 $x_0$ 不能完全决定 $x_1$ 时的说法；$\rho=1$ 时一步就精确。这个区别在第 5.5 节很要紧。
+
+\subsection{一般情形：为什么条件期望就够了}
+
+现在 $x_0,x_1$ 是高维的（细网格上的场），联合分布 $\pi$ 任意，只要求边缘分布正确。$p_t$ 记 $x_t$ 的分布，$u_t(x)=\E_\pi[x_1-x_0\mid x_t=x]$。取任意光滑试探函数 $\varphi$，算 $\E\varphi(x_t)$ 对 $t$ 的导数：
+\begin{equation}
+\frac{\dd}{\dd t}\E\,\varphi(x_t)=\E\big[\nabla\varphi(x_t)\cdot(x_1-x_0)\big]
+\overset{\text{tower}}{=}\E\Big[\nabla\varphi(x_t)\cdot\E[x_1-x_0\mid x_t]\Big]=\int\nabla\varphi(x)\cdot u_t(x)\,p_t(x)\,\dd x .
+\end{equation}
+中间那一步就是 tower property：先对给定 $x_t$ 取条件期望，再对 $x_t$ 平均。左边是 $\int\varphi\,\partial_tp_t$，右边分部积分是 $-\int\varphi\,\nabla\cdot(p_tu_t)$。对所有 $\varphi$ 成立，所以
+\begin{equation}
+\boxed{\;\partial_tp_t+\nabla\cdot(p_tu_t)=0\;}
+\end{equation}
+这是连续性方程（Liouville）：一团按速度场 $u_t$ 运动的"流体"，密度就这样演化。反过来，如果把一堆粒子从 $x_0\sim p_0$ 出发按 $\dot x=u_t(x)$ 推动，它们的密度满足同一个方程、同一个初值，所以在 $t=1$ 时的分布就是 $p_1$，也就是 $x_1$ 的分布。整个论证里 $\pi$ 只通过 $u_t$ 出现，而 $u_t$ 是对同一个 $x_t$ 的所有来源取平均——所以不同的 coupling 会给出不同的直线、不同的 $u_t$，但同样正确的终点分布。
+
+\subsection{训练目标}
+
+网络 $v_\theta(x,t)$ 拟合 $u_t$。用最小二乘：
+\begin{equation}
+\mathcal L=\E_{t,\pi}\big\|v_\theta(x_t,t)-(x_1-x_0)\big\|^2
+=\E_t\E_{x_t}\big\|v_\theta(x_t,t)-u_t(x_t)\big\|^2+\E_t\E\big[\Var(x_1-x_0\mid x_t)\big].
+\end{equation}
+第二步是"均方误差 = 偏差平方 + 不可约方差"，交叉项按 tower property 为零。第二项与 $\theta$ 无关，所以最小值在 $v_\theta=u_t$。物理配对让第二项变小（目标更可预测），这就是它帮助训练的机制。
+
+\subsection{我们的 $x_0$、$x_1$ 和 coupling}
+
+回到场。全部放到细网格上、以 $h_f$ 为单位：
+\begin{equation}
+x_0=P\Psi_c+\underbrace{D\,\frac{i\kk}{k^2}\hat\eta}_{\text{octave 的线性理论}},\qquad x_1=\Psi_f .
+\end{equation}
+物理配对：$x_1=\Sim_f[\delta_c+\eta]$ 和 $x_0$ 用同一个 $\eta$；独立配对：$x_0$ 里换成另一个独立的 $\eta'$。两者边缘分布相同（$x_0$ 的分布只依赖 $\eta$ 的分布），所以按上一小节都合法。把 $\Psi_f$ 写成 $P\Psi_c+D\,i\kk\hat\eta/k^2+\rho$，$\rho$ 是二阶及以上的部分（\eqref{eq:eps2} 加高阶），则
+\begin{equation}
+\E\|x_1-x_0\|^2_{\rm phys}=\E\|\rho\|^2,\qquad
+\E\|x_1-x_0\|^2_{\rm indep}=\E\|\rho\|^2+2\,\E\Big\|D\tfrac{i\kk}{k^2}\hat\eta\Big\|^2+2\,\E\langle\rho,D\tfrac{i\kk}{k^2}\hat\eta\rangle ,
+\end{equation}
+最后一项在二阶为零（$\rho^{(2)}$ 是 $\eta$ 的二次型，和 $\eta$ 的一次项的期望是三阶矩，Wick 给零）。独立配对让网络多背两倍的线性 octave 方差——它已经知道的东西。物理配对下 $x_1-x_0$ 在一阶为零，单流区很小，只在 halo 内部（$\eta\mapsto\Psi_f$ 混沌的地方）才大。玩具模型里光 $x_0$ 就已经和真值有 $r\approx0.92$。
+
+网络实际看到的是 $x_t-P\Psi_c$（相对插值粗场的残差）和 $D_{ij}(P\Psi_c)$，目标 $x_1-x_0$。三者对所有场加同一个常数都不变，所以学出来的映射天然平移不变。
+
+\subsection{一步等于回归：$P_{\rm pred}/P_{\rm true}=r^2$，以及它相对什么信息成立}
+
+一维例子已经看到一步 Euler 给出条件均值 $\E[x_1\mid x_0]$。先说清楚它相对什么信息成立。一般地，记 $\mathcal I$ 为预测时手上的信息，对任意 Fourier 模式 $\hat x_1(\kk)$，全方差公式
+\begin{equation}
+\E|\hat x_1|^2=\E\big|\E[\hat x_1\mid\mathcal I]\big|^2+\E\big[\Var(\hat x_1\mid\mathcal I)\big]
+\end{equation}
+说条件均值的功率比真值少了恰好条件方差。再算它和真值的互功率：$\E\big[\hat x_1\overline{\E[\hat x_1\mid\mathcal I]}\big]$，先对给定 $\mathcal I$ 取条件期望（tower），$\hat x_1\to\E[\hat x_1\mid\mathcal I]$，得到 $\E|\E[\hat x_1\mid\mathcal I]|^2$，即互功率等于条件均值自己的功率。于是
+\begin{equation}
+r=\frac{P_{\rm cross}}{\sqrt{P_{\rm pred}P_{\rm true}}}=\sqrt{\frac{P_{\rm pred}}{P_{\rm true}}}
+\ \Longrightarrow\
+\boxed{\;\text{给定 }\mathcal I\text{ 的条件均值：}\ \frac{P_{\rm pred}}{P_{\rm true}}=r^2;\ \ \text{生成模型：}\ \frac{P_{\rm pred}}{P_{\rm true}}=1\;}
+\end{equation}
+一维例子里 $r=\rho$、功率比 $\rho^2$，正是这个。
+
+关键在 $\mathcal I$ 是什么。用物理配对时，$x_0-P\Psi_c=D\,i\kk\hat\eta/k^2$ 就是线性 octave，$\eta=-D^{-1}\nabla\cdot(x_0-P\Psi_c)$ 可以精确反推；如果 $C$ 又决定 $\delta_c$，那么 $x_1=\Sim_f[\delta_c+\eta]$ 是 $(x_0,C)$ 的确定性函数，$\Var(x_1\mid x_0,C)=0$。这时理想的一步回归是精确的，理想的 flow 也是精确的，混沌不改变这一点。所以\textbf{不能说}"一步回归必然丢功率"。$P/P=r^2$ 这条线描述的是信息不完整的情形：只给粗场不给 octave、独立配对、只看一个 patch、网络容量有限。真正的对比是：\textbf{不带 octave 的回归}（或独立配对下的回归）会塌缩到 $\E[x_1\mid C]$，落在 $P/P=r^2$ 上；而随机性就是 octave 的生成模型落在 $P/P=1$ 上。物理配对下两种目标原则上都精确，flow 的好处是经验性的（每个 $t$ 上一个更容易的回归、多步迭代细化），不是方差论证。
+
+顺便更正一个容易说错的句子：确定性 ODE 不会"把被平均掉的残差重新加回来"。$u_t$ 本身就是条件均值，样本的全部随机性来自 $x_0$，多步积分只是把它运输得更准。
+
+再看玩具数据。参考的 $16\to32$ 模型一步 Euler 给出 $r=0.993$、功率比 $0.959$，而一个以该 $r$ 为最优的条件均值应有 $r^2=0.986$：一步模型并不是最优回归，差的那部分是模型和优化的缺陷；八步 Heun 把功率比提到 $0.993$，应当解读为多步参数化把同一个映射拟合得更好，而且要用相同条件下直接训练的回归 baseline 来区分。采样 octave 的生成模式功率比 $1.02$、$r\approx0$，符合生成模型那条线。
+
+\subsection{采样、步数、以及怎么采 octave}
+
+采样就是从 $X_0=x_0$ 出发用 Heun（二阶 Runge–Kutta）积分 $\dot X=v_\theta(X,t)$ 到 $t=1$。因为路径短而直，步数很少：$1,2,8$ 步给功率比 $0.959,0.978,0.993$，按第 5.5 节的讨论，这衡量的是多步参数化对映射的拟合程度，不是方差的恢复。逐 octave 生成的好处（Guth 等 2022 的论点）是每一级的任务都是"相对输入生成下一个 octave"，所以步数不随总分辨率增长。
+
+采 $\eta$ 时不需要外部的线性功率谱：从训练集的初条件位移算 $\hat\delta^{(1)}=-i\kk\cdot\hat\Psi^{(1)}$，测各向同性的 $P_\delta(k)$，用它合成一个高斯 $\hat\delta$（只在 $W$ 之外的模式上；用立方体时这正好是 octave，用球时还包括角落模式，受第 1.4 节那个 caveat 的限制），再用 \eqref{eq:zel} 变成位移。这样位移自动无旋。直接对三个分量各采一个高斯是错的，那样的场有旋度，线性阶就不对。
+
+%======================================================================
+\section{无量纲化与自相似}
+%======================================================================
+
+位移有长度量纲，大尺度 bulk flow 以 $h_\ell$ 为单位会随 $\ell$ 增大而无界；$D_{ij}$ 无量纲、平移不变、在已分辨尺度上的统计不依赖网格。细节以格距为单位的幅度：$P_\Psi\propto P_{\rm lin}/k^2$，一个 octave 的位移方差 $\sigma^2_{\Psi,\ell}\propto\int k^2\dd k\,k^{n-2}\propto k_\ell^{\,n+1}$，所以 $\sigma_{\Psi,\ell}/h_\ell\propto k_\ell^{(n+3)/2}$，$n>-3$ 时随层级缓慢增大，有界。一个共享权重的网络因此在每一级看到同类输入，只需再喂一个"这一级多非线性"的标量。
+
+尺度无关宇宙（$P\propto k^n$，EdS）里这是严格的。$\sigma^2(R,a)\propto a^2R^{-(n+3)}$，令 $\sigma(R_{\rm NL},a)=1$ 得 $R_{\rm NL}\propto a^{2/(n+3)}$；所有无量纲统计只通过 $r/R_{\rm NL}(a)$ 依赖长度。第 $\ell+1$ 级在 $a$ 时刻的无量纲状态是 $h_{\ell+1}/R_{\rm NL}(a)$，要它等于第 $\ell$ 级在 $a'$ 时刻的 $h_\ell/R_{\rm NL}(a')$：
+\begin{equation}
+R_{\rm NL}(a')=2R_{\rm NL}(a)\quad\Longleftrightarrow\quad a'=2^{(n+3)/2}a\qquad(n=-2:\ a'=\sqrt2\,a).
+\end{equation}
+往下走一级等于等到 $R_{\rm NL}$ 翻倍。有限盒子只在最长波长上破坏它，而算子是局域的，所以够用。ΛCDM 没有严格自相似，就把算子条件化在 $s_\ell=(\sigma(h_\ell,z),\,n_{\rm eff}(k_\ell),\,f(z))$ 上，假设 $2\times$ 算子只通过这三个数依赖层级、红移和宇宙学——和 halo mass function 对 $\nu$ 的普适性是同一类假设，可以在真实序列上用匹配 $\sigma$ 的两个 transition 检验。
+
+%======================================================================
+\section{评估指标}
+%======================================================================
+
+所有谱都是三个分量求和后的球壳平均，分别在粗带（$W$）和 octave 带（$1-W$）里算。互相关系数 $r(k)=P_{ab}/\sqrt{P_{aa}P_{bb}}$ 在 emulator 模式下衡量确定性，$1-r^2$ 是生成模型必须提供的那部分功率。功率比 $P_{aa}/P_{bb}$ 在生成模式下必须是 1；$(r,P_{aa}/P_{bb})$ 这一对数把模型定位在回归线 $P/P=r^2$ 和生成线 $P/P=1$ 之间。粗带的相对修正误差 $(P_{aa}+P_{bb}-2P_{ab})/P_{bb}$ 衡量这一步把粗模拟修得多好；生成模式下它比 emulator 模式大，因为 \eqref{eq:stress} 里的 $\hat T^{\eta\eta}_{ij}$ 随 octave 的实现变化。Wiener 传递函数 $T(k)=P_{cf}/P_{ff}$ 是让 $\E|T\Psi_f-\Psi_c|^2$ 最小的各向同性线性滤波（逐模式对 $T$ 求极小，二次函数），即"真实低分辨率模拟最像的那种 coarse-graining"，用来决定 $\alpha$ 放在哪。
+
+%======================================================================
+\section{哪些是推出来的，哪些是假设，哪些要靠数据}
+%======================================================================
+
+推出来的：第 1 节的采样与投影恒等式；线性阶 $\varepsilon^{(1)}=0$、细节独立高斯；\eqref{eq:eps2}（含细节里粗模式的谐波项）、\eqref{eq:stress} 与 $\eta\eta$ 项的 $k^2/k^4$ 定律（Wick 形式）；\eqref{eq:B} 的局域性；混合形式的 push-forward \eqref{eq:mixture} 与完整链的 Markov 性；连续性方程与 coupling 无关性；损失的极小元；相对信息集 $\mathcal I$ 的 $P/P=r^2$；尺度无关的层级--时间对应。
+
+要记住的理想化：push-forward 只在条件决定 $\delta_c$ 时退化为单个映射，实际用的缩减状态（投影场、patch、有限网络）让它变成混合、让缩减链只近似 Markov；用球窗时角落模式被重新采样而保留场对它有信息（立方体窗没有这个问题）；$k^2/k^4$ 是理想二阶 $\eta\eta$ 项的结果，混合项至少同样陡，高阶和离散性误差不保证同一指数；"散度谱"是位移的散度，不是 Eulerian 密度。
+
+假设、要在真实 64/128/256/512 上测：真实低分辨率模拟的离散性白噪底足够小（Phase 0 面板 (a)）；给定局部 $D_{ij}$ 后细节在单流区近高斯、在多流区仍可处理（面板 (c)）；$s_\ell$ 的普适性足够好（匹配 $\sigma$ 的比较）。玩具实验用的是 2LPT，没有壳层交叉，对多流区什么都说明不了。
+
+相对第一版的修改（根据一份外部审阅）：\eqref{eq:psi2} 实空间形式的符号；\eqref{eq:eps2} 中 $d^{(2)}$ 漏掉的 $S[\delta_L]$ 项；散度与密度的区分和 $k^4$ 的 Wick 形式；条件分布的混合形式与 Markov 性的适用范围；删去"一步回归必然丢功率"和"多步 flow 把方差加回来"两个说法；把立方体窗定为理论默认。
+
+\section*{公式与代码的对应}
+
+\begin{itemize}[leftmargin=1.5em]
+\item \eqref{eq:cf1d} 的因子与相位：\texttt{Grid.phase}、\texttt{restrict\_spectral}、\texttt{prolong\_spectral}（\texttt{phase0\_octaves.py}），\texttt{Scaffold.prolong}（\texttt{octave\_flow\_toy.py}）。
+\item $W$：\texttt{sphere\_window} / \texttt{cube\_window}；细节 $(1-W)$：\texttt{Scaffold.band} 的 \texttt{"high"} 分支。
+\item $\varepsilon$、$T(k)$、$r(k)$：\texttt{analyse\_transition} 的 (a) 部分；线性 octave 与 $d$ 的比较：(b) 部分。
+\item $D_{ij}$ 的不变量与分箱：\texttt{coarse\_invariants}、\texttt{conditional\_stats}。
+\item 去 aliasing 的 2LPT 层级（验证 $k^2$）：\texttt{make\_selftest} 的 \texttt{dealias=True}；aliased 版本模拟真实低分辨率模拟的离散性。
+\item $x_0$、$x_1$ 与损失：\texttt{Batcher.make} 和训练循环；$u_t$ 的积分：\texttt{sample\_flow}。
+\item 无旋 octave 采样：\texttt{sample\_linear\_octave}；$D_{ij}$ 输入：\texttt{Scaffold.gradients}。
+\end{itemize}
+
+\end{document}
