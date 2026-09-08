@@ -149,3 +149,17 @@ Nothing from A/B/C has been produced yet. To resume after reboot:
   cd /Users/zhangxiaowen/AntigravityProjects/progressive-sr
   PYTHONUNBUFFERED=1 nohup runs/stage3b_driver.sh >> runs/stage3b.log 2>&1 &
 Estimated 4 h 45 min for the six trainings (1.9 s/step, 1500 steps each) plus ~3 min for C.
+
+## 2026-09-08 — repository initialised from the Cowork session (git 2.34 in the desktop-app VM)
+
+- `git init -b main`, `.gitignore` excludes `.venv`, `Claude outputs/`, `runs/**/*.pt`, `*.npy`, logs;
+  RUNLOG/REPORTs/results.json/summary.png ARE committed. Initial commit 9bebaab (85 files).
+- Added `hpc/` (checklist, SLURM templates, `convert_snapshot.py`) and git-commit/argv recording in
+  `results.json` (`git_commit`, `argv`) and `phase0_results.json` (`_git_commit`, `_argv`).
+- Note: `octave_flow_toy.py` and `phase0_octaves.py` were replaced on disk while the Stage 3b
+  driver was inside A1 (python had already loaded the old module, so A1 is unaffected); A2 onwards
+  run the new file, which differs only by the commit/argv bookkeeping in results.json. The
+  earlier sphere-window Stage 3 runs and A1 therefore have no `git_commit` field.
+- KICKOFF_STAGE3B.md experiment D expectation corrected: in pure 2LPT `P_harm/P_nl` is a
+  constant (both terms second order); the trend with nonlinearity is a real-data question.
+- To push: create the GitHub repo, then `git remote add origin <url> && git push -u origin main`.
