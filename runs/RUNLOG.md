@@ -163,3 +163,23 @@ Estimated 4 h 45 min for the six trainings (1.9 s/step, 1500 steps each) plus ~3
 - KICKOFF_STAGE3B.md experiment D expectation corrected: in pure 2LPT `P_harm/P_nl` is a
   constant (both terms second order); the trend with nonlinearity is a real-data question.
 - To push: create the GitHub repo, then `git remote add origin <url> && git push -u origin main`.
+
+## 2026-09-08 19:23 — Stage 3b resumed after the reboot
+
+`PYTHONUNBUFFERED=1 nohup runs/stage3b_driver.sh >> runs/stage3b.log 2>&1 &`, one job on the
+GPU at a time. A1 (cube, flow, physical) is healthy: loss 3.49e-2 (1) -> 1.52e-2 (75) ->
+8.46e-3 (150) at 1.90 s/step, i.e. on top of the old sphere run's 1.50e-2 / 8.33e-3 —
+further confirmation that the earlier divergence was GPU contention, not the cube window.
+
+Added `runs/make_figures.py` (new file, imports the two main scripts, changes neither):
+full-range spectra of the displacement divergence and real-space slices (Lagrangian theta
+and an Eulerian CIC density) for coarse / baseline / emulator / generative / truth.
+Runs on the CPU by default so it can be used while a training job holds the GPU.
+The CIC deposit self-checks mass conservation (262144.0 = 64^3, <delta> = -1.1e-16).
+
+- `python runs/make_figures.py --ckpt runs/toy32_main/model_ema.pt --window sphere --tag sphere`
+  -> `runs/fig_spectra_sphere.png`, `runs/fig_slices_sphere.png`.
+  P_theta of the prolonged coarse field drops ~11 decades at k_Ny,c = 1.005 h/Mpc; the
+  baseline's octave-band power falls from 1.0 to 0.78 of truth; emulator and generative both
+  sit on 1.0; r(k) is ~1 below k_Ny,c for all, then stays ~1 for the emulator and drops to 0
+  for the generative sample. To be repeated with the cube model (A1) for REPORT_3b.
