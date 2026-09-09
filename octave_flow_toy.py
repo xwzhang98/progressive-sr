@@ -311,7 +311,12 @@ class Batcher:
         if eta == "true":
             lin = sc.band(icf * self.growth, "high")              # true linear octave
         else:
-            lin = sc.sample_linear_octave(dc.shape[0], gen) * self.growth
+            # NB: no * self.growth here -- fit_linear_power() is given ic_f * growth, so
+            # A_delta (and therefore sample_linear_octave) already carries the growth factor.
+            # Applying it twice made the sampled octave growth^2 = 5890x too powerful at
+            # growth = 76.7 (generative P/P_true = 7397 on the first real-data run); it was
+            # invisible on the 2LPT toy because every toy run uses the default growth = 1.
+            lin = sc.sample_linear_octave(dc.shape[0], gen)
         if self.source_filter == "wiener":
             Pc_src, lin = sc.apply_filter(Pc, "low"), sc.apply_filter(lin, "high")
         else:

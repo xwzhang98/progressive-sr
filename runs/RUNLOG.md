@@ -520,3 +520,51 @@ So the shortfall of the ideal k^4 law on N-body data is a DISCRETENESS effect, n
 nonlinearity effect — which is what Sec. 5's caveat says, now with the confound removed.
 This also closes item 3 of the re-check list (the selfsim slopes are not "unexplained": they
 are the discreteness floor, present from z=9 on).
+
+## 2026-09-09 03:00 — BUG: --growth applied twice to the SAMPLED octave (fixed)
+
+Found on the first real-data run: `runs/R_flow_phys` reported generative
+`P/P_true = 7397` while sample-A-vs-sample-B was 1.0018, i.e. the two samples agreed with
+each other but both were enormously too powerful.
+
+Cause: `main()` fits the octave prior on growth-scaled ICs,
+`sc.fit_linear_power([it["ic_f"] * args.growth for it in train])`, so `A_delta` — and hence
+`sample_linear_octave()` — already carries the growth factor; `Batcher.make()` then did
+`lin = sc.sample_linear_octave(...) * self.growth`, applying it a second time. The true-octave
+branch, `lin = sc.band(icf * self.growth, "high")`, applies it once and is correct, as does
+`fit_source_filters`, which uses `ic_f * growth`. So the sampled octave was growth = 76.7 times
+too large in amplitude, growth^2 = 5890 too large in power; predicted 1.486 * 5890 = 8752
+against the observed 7397 (the difference is the isotropic fit versus the true realisation's
+spectral shape).
+
+**Invisible on every toy run**, which all use the default `--growth 1.0`: no Stage 3 or 3b
+result is affected. On real data it invalidates the generative lines only; emulator lines and
+the training of any `--coupling physical` run are unaffected (they never call the sampled
+branch). It WOULD have silently corrupted the training of `--coupling independent` runs.
+
+Fix (one line, in `Batcher.make`): drop the second `* self.growth`, with a comment recording
+why. Verified by re-running the R1 checkpoint through `--eval-only` on the CPU:
+generative `P/P_true` 7397 -> **0.811**, generative rms/h_f 31.0 -> 0.564.
+
+R1 (`runs/R_flow_phys`) re-evaluated after the fix, self-run N-body 32->64 at z=0
+(multi-stream fraction 0.29); rms is now split by the coarse run's multi-stream mask:
+
+| line | octave r | octave P/P | coarse r | coarse eps | rms/h_f (multi / single) |
+|------|----------|------------|----------|------------|--------------------------|
+| baseline x0 | 0.555 | 1.486 | 0.9464 | 1.08e-01 | 0.577 (0.658 / 0.540) |
+| emulator, 8 Heun | 0.722 | 0.993 | 0.9711 | 5.64e-02 | 0.411 (0.490 / 0.373) |
+| emulator, 1 Euler | 0.756 | **0.682** | 0.9715 | 5.50e-02 | 0.372 (0.441 / 0.339) |
+| generative A | 0.165 | 0.811 | 0.9541 | 9.21e-02 | 0.564 (0.619 / 0.540) |
+| sample A vs B | 0.190 | 1.002 | 0.9767 | 4.63e-02 | 0.476 |
+
+Note the one-step evaluation has HIGHER r (0.756 vs 0.722) but much LOWER P/P (0.682 vs
+0.993) — the power-deficit pattern Stage 5 predicts, and the opposite of the 2LPT toy where
+1-step and 8-step were identical. This is still an intra-model comparison; the discriminating
+number is R2, the independently trained regression, which is running.
+Also note sample-A-vs-B octave r = 0.190 here versus ~0.008 on the toy: at z=0 a real part of
+the octave-band detail is fixed by the coarse field through mode coupling, so two generative
+realisations are not independent there.
+
+Queue rearranged for Stage 5 (`runs/stage5_train.sh`), superseding the independent-coupling
+R3/R4 I had queued before KICKOFF_STAGE5.md landed: R3/R4 are now the `--source-filter wiener`
+runs, followed by seed repeats of R1/R2 for an error bar, then CPU re-evaluation of R1/R2.
