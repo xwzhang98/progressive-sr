@@ -663,3 +663,52 @@ Both match KICKOFF_STAGE5.md's stated expectations (Tc ~1 below 0.5 k_Ny,c falli
 confirmed exactly: octave-band `P/P_true` = **0.331** against `r^2` = 0.555^2 = **0.308** (it
 was 1.486 with the raw linear octave), and rms/h_f drops 0.577 -> 0.465. The filtered source
 therefore sits on the `P/P = r^2` line, which is where the best linear prediction belongs.
+
+## 2026-09-09 06:25 — Stage 5 results (R1-R4 + seed repeats); see runs/REPORT_5.md
+
+Chain: R3_flow_wiener 03:19-04:06, R4_reg_wiener 04:06-04:52, R1b_flow_s1 04:52-05:38,
+R2b_reg_s1 05:38-06:24, then re-evaluation of R1/R2. Self-run MP-Gadget 32->64, z=0,
+multi-stream fraction 0.29, 8 train seeds / test seed 8.
+
+| run | r | P/P | r^2 | eps | rms | multi | single | gen P/P | gen r |
+|-----|---|-----|-----|-----|-----|-------|--------|---------|-------|
+| baseline raw     | 0.5551 | 1.4860 | 0.3081 | 1.08e-01 | 0.577 | 0.658 | 0.540 | - | - |
+| baseline wiener  | 0.5550 | 0.3310 | 0.3081 | 9.96e-02 | 0.465 | 0.538 | 0.431 | - | - |
+| R1  flow phys s0 | 0.7220 | 0.9928 | 0.5213 | 5.64e-02 | 0.411 | 0.490 | 0.373 | 0.8109 | 0.165 |
+| R1b flow phys s1 | 0.7261 | 0.9830 | 0.5272 | 5.73e-02 | 0.410 | 0.489 | 0.372 | 0.8048 | 0.171 |
+| R3  flow wiener  | 0.6880 | 1.1266 | 0.4733 | 5.85e-02 | 0.434 | 0.515 | 0.396 | 0.8749 | 0.155 |
+| R2  reg  phys s0 | 0.8192 | 0.6902 | 0.6711 | 3.13e-02 | 0.314 | 0.380 | 0.282 | 0.6516 | 0.198 |
+| R2b reg  phys s1 | 0.8201 | 0.6878 | 0.6725 | 3.07e-02 | 0.313 | 0.379 | 0.281 | 0.6486 | 0.200 |
+| R4  reg  wiener  | 0.8275 | 0.7035 | 0.6848 | 3.02e-02 | 0.309 | 0.374 | 0.278 | 0.6658 | 0.198 |
+
+Seed spread is tiny (regression r 0.0008, flow r 0.0041) against a flow-vs-regression gap of
+0.098, so every statement below is 20-100x the repeat scatter.
+
+The predicted separation is REAL and is the opposite of the 2LPT toy: regression sits on the
+P/P = r^2 line (0.690 vs 0.671) and the flow on P/P = 1 (0.983-1.127). But it is a trade-off,
+not a win for the flow: the regression reaches r = 0.82 where the flow reaches 0.72, with 24%
+smaller rms and half the coarse-band eps. Stage 5's "at similar r" does not hold.
+The gap is NOT localised in the multi-stream patches — regression is better in both, by nearly
+the same factor (multi/single ratio 1.35 regression, 1.31 flow). Caveat: the printed split is
+of the rms error; the power deficit is spectral and is not split by region, so "the power
+deficit is localised in multi-stream" is untested (needs masked spectra, not implemented).
+
+Wiener source: shortens the path 19% (baseline rms 0.577 -> 0.465, P/P 1.486 -> 0.331 ~ r^2)
+but does not improve the trained model — worse for the flow (r 0.688 vs 0.722, 8x the seed
+scatter), inside the seed scatter for the regression. Recommend dropping it from round one.
+Coarse-band residual matches 1 - r_cf^2 to 5% (0.1044 predicted / 0.1076 measured raw;
+0.1040 / 0.0996 after Tc).
+Generative mode under-produces for BOTH objectives (flow 0.81, regression 0.65) where the toy
+gave 1.02 / 1.00: the "accurate deterministic map of a fresh octave" argument needs an accurate
+map, and at r = 0.72-0.82 it is not.
+
+### My own error, caught by an internal consistency check
+
+The first re-evaluation of R2 omitted `--regression`, so a model trained only at t=0 was
+integrated with 8 Heun steps: r = 0.709 instead of 0.819. It was exposed by the emulator line
+disagreeing between the in-run and re-run evaluations for R2 but not for R1 — the growth fix
+touches only the sampled branch, so the emulator lines had to be identical. Corrected; the
+table above is the `--regression` evaluation. **Any `--eval-only` of a regression checkpoint
+must pass `--regression`.**
+
+runs/REPORT_5.md written.
