@@ -441,3 +441,82 @@ Unblocked for the self-run pair: `octave_flow_toy.py --nc 32 --nf 64 --dis
 "data/selfsim/dis_{N}.npy" --ic "data/selfsim/ic_dis_{N}.npy" --growth 76.7439` needs the
 `{seed}` placeholder too, so a multi-seed set has to be generated first (one seed per
 MP-GenIC run; 21 s + 104 s each, so 8 seeds is ~20 min). Not started.
+
+## 2026-09-09 02:20 — overnight CPU analyses (GPU busy with the selfsim training)
+
+### Correction to an earlier entry (append-only, so recorded here rather than edited)
+
+1. The "Stage 4 continued" table above lists haar rms(eps)/h_c = 0.2432 for the 128to256
+   production transition and flags it as suspicious. It was wrong: that grep did not include
+   the `R=haar` line for 128to256 and I carried the 64to128 value over. The correct value is
+   **0.3589**. The conclusion in that entry is unaffected (haar is still the smallest of the
+   three at both production transitions).
+2. The heading of the MP-Gadget entry says "02:00-03:00"; the actual clock times were
+   01:00-01:30.
+
+### Haar vs the spectral R: the ordering flip is (partly) a grid-convention artefact
+
+Haar wins on BOTH production transitions and loses on selfsim, so it is dataset-dependent,
+not transition-dependent:
+
+| dataset | transition | offset | sphere | cube | haar | winner |
+|---------|-----------|--------|--------|------|------|--------|
+| production set2 | 64->128 | 0.5 | 0.2836 | 0.2745 | 0.2432 | haar |
+| production set2 | 128->256 | 0.5 | 0.4063 | 0.3928 | 0.3589 | haar |
+| selfsim s0 | 32->64 | 0.0 | 0.1947 | 0.1898 | 0.2893 | cube |
+
+Analytically, the Haar block of fine cells 2j, 2j+1 has its centre at (j + (o+0.5)/2) h_c
+while the coarse grid point is at (j + o) h_c; these coincide only for **o = 0.5**. At o = 0
+the block centre is a quarter of a coarse cell off. The misalignment is NOT a constant
+(<eps_haar> is ~1e-4 h_c in every dataset); it is a resampling error ~ delta . grad Psi.
+Controlled test on the same selfsim data, shifting BOTH levels to cell centres with
+`shift_field`:
+
+  haar 0.2893 -> **0.2155** (-26%)   cube 0.1898 -> 0.1861 (-2%)
+
+So Haar's rms(eps) is convention-sensitive at the 26% level and the spectral R is not; any
+Haar-vs-spectral comparison must fix the convention first. This does NOT fully explain the
+flip: even aligned, haar (0.2155) still loses to cube (0.1861) on selfsim while winning on
+production. Settling it needs the same transition on both datasets, i.e. a 64->128 selfsim
+pair (a 128^3 run, ~15 min/seed — not done tonight).
+
+### (b) detail vs linear octave — the panel that is impossible on the production data
+
+`runs/selfsim_32to64`, real N-body, z=0, 32->64, with real ICs:
+
+| k/k_Ny,c | 1.00 | 1.25 | 1.50 | 1.75 | 1.88 |
+|----------|------|------|------|------|------|
+| r(d, linear octave) | 0.747 | 0.628 | 0.533 | 0.444 | 0.421 |
+
+Band-averaged r = 0.5561, so r^2 = 0.32. **The linear-theory octave linearly explains only
+32% of the detail variance at z=0.** T/D = 55.0/76.7 = 0.72: the detail's cross-power with
+the octave is 72% of the linear extrapolation (README documents that T carries the growth
+ratio, so T is not expected to be 1). Read this as "how much of the detail the hard-coded
+linear part of Sec. 4(i) already covers", NOT as irreducible noise: under full physical
+conditioning Var(x1 | x0, C) = 0, so the other 68% is the nonlinear map the network learns.
+
+### The coarse-only harmonics anomaly is physics, not a bug — resolved by a redshift scan
+
+Reran seed 181170 with `OutputList = 0.1,0.25,1.0` (a 2-minute rerun) and applied the
+diagnostic at each output with the matching growth factor:
+
+| z | growth | multistream | P_harm/P_nl | r(d_nl, harm) | rms(eps)/h_c cube | slope P_div,eps |
+|---|--------|-------------|-------------|---------------|-------------------|-----------------|
+| 9 | 9.9954 | 0.000 | 0.040 | **0.135** | 0.0181 | +2.12 |
+| 3 | 24.8220 | 0.004 | 0.102 | **0.203** | 0.0481 | +2.06 |
+| 0 | 76.7439 | 0.291 | 0.201 | **-0.018** | 0.1898 | +2.00 |
+
+The correlation rises from z=9 to z=3 and collapses to zero at z=0, exactly where the
+multistream fraction jumps from 0.004 to 0.291. So the 2LPT harmonic description of the
+detail holds (weakly) while the flow is single-stream and dies once shell crossing sets in.
+The z=0 value P_harm/P_nl = 0.201 has power but zero correlation: it is not a predictive
+component there. **The 24% / r = 0.45 from the 2LPT self-test does not transfer to N-body**;
+even at z=9 the correlation is only 0.135, because in N-body the other second-order terms
+plus discreteness dilute the coarse-only piece. This closes item 1 of the re-check list.
+
+Independent observation from the same scan: the low-k slope of P_div,eps is +2.0 to +2.1 at
+ALL THREE redshifts (theory 4), including z=9 where the multistream fraction is exactly 0.
+So the shortfall of the ideal k^4 law on N-body data is a DISCRETENESS effect, not a
+nonlinearity effect — which is what Sec. 5's caveat says, now with the confound removed.
+This also closes item 3 of the re-check list (the selfsim slopes are not "unexplained": they
+are the discreteness floor, present from z=9 on).
