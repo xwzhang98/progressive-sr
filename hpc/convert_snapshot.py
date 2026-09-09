@@ -41,7 +41,9 @@ def load_snapshot(path, ptype, npz=None):
     f = bigfile.File(path)
     head = f["Header"].attrs
     box = float(np.asarray(head["BoxSize"]).ravel()[0])
-    meta = {k: (np.asarray(v).tolist() if not isinstance(v, (bytes, str)) else str(v)) for k, v in head.items()
+    # bigfile's AttrSet exposes keys() only (no .items()), so index it key by key
+    meta = {k: (np.asarray(head[k]).tolist() if not isinstance(head[k], (bytes, str)) else str(head[k]))
+            for k in head.keys()
             if k in ("BoxSize", "Time", "TotNumPart", "MassTable", "HubbleParam", "Omega0", "OmegaLambda",
                      "UsePeculiarVelocity", "TimeIC", "Redshift")}
     grp = f[f"{ptype}/"]

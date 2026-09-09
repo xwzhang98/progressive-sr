@@ -349,3 +349,95 @@ r(coarse, R fine) = 0.985 at 0.41 k_Ny,c, 0.938 at 0.59, 0.804 at 0.81, 0.678 at
 coarse modes near Nyquist are still strongly informative, not noise, so re-sampling them from
 the prior (what the sphere does) discards real information — consistent with review point 4
 and with the cube being the default. A real test needs a trained model, i.e. the ICs.
+
+## 2026-09-09 02:00-03:00 — self-run MP-Gadget 32/64 with ICs (owner's suggestion)
+
+Motivation: the Box snapshots have no ICs, which blocks real-data TRAINING entirely (the
+source needs the fine IC octave). Running our own small pair gives N-body data — with shell
+crossing, which the 2LPT toy structurally cannot produce — together with its ICs.
+
+### Build (macOS arm64, M2 Max)
+
+`brew install open-mpi gsl fftw pkg-config` (pulls gcc-16); MP-Gadget cloned to ~/src/MP-Gadget
+(5.0.1.dev1_e85eb611fd). Two things had to be worked around, neither in this repo:
+- `depends/install_pfft.sh` uses `wget`, absent here. Pre-placing the tarball with `curl` in
+  `depends/` makes the script skip its download; MP-Gadget's own files were not edited.
+- `Options.mk`: `MPICC = OMPI_CC=gcc-16 mpicc` builds MP-Gadget but breaks pfft's autoconf,
+  which treats the whole string as the program name. Use `MPICC = mpicc` and build with
+  `OMPI_CC=gcc-16 make -j8`. (Apple clang, which mpicc wraps by default, has no -fopenmp.)
+Both binaries build clean. Param files kept in `sims/` (tracked); outputs in `data/` (ignored).
+
+### Runs
+
+MP-GenIC + MP-Gadget, Ngrid 32 and 64, same Seed 181170, BoxSize 100000 kpc/h (= the
+production box), Omega0=0.2814 OmegaLambda=0.7186 h=0.697, z_init=99 -> z=0, class_pk_99.dat.
+Wall time on 2 ranks x 6 threads: 21 s (32^3), 104 s (64^3).
+`hpc/convert_snapshot.py` conventions found with `--check`: `--id-offset 1 --id-order C
+--offset 0` gives rms|x-q|/h = 0.033 (32) / 0.066 (64) at z=99; the alternatives give
+0.87 and 26. Note `--pos-unit 1 --box 100000` to stay in kpc/h like the production data.
+z=0 displacement rms/component: 4364 (32) / 4432 (64) kpc/h, against 4519/4537 for the
+production 64/128 — the self-run data sits at the same physical amplitude.
+Growth D(z=0)/D(z=99) = 76.7439 for this cosmology.
+
+Fixed in `hpc/convert_snapshot.py` (it was shipped untested): bigfile's `AttrSet` has no
+`.items()`, only `keys()`. Two-line change to iterate over `head.keys()`; nothing else touched.
+
+### MP-GenIC ICs are NOT exactly nested across resolution
+
+`|R_cube IC_64 - IC_32| / |IC_32| = 1.439e-01` at offset 0 (2.458e-01 at offset 0.5), where
+an exactly nested pair gives ~1e-6. But they are not independent either (uncorrelated fields
+would give sqrt(2)). Resolving it in k:
+
+| k/k_Ny,32 | 0.08 | 0.25 | 0.44 | 0.63 | 0.82 | 1.00 |
+|-----------|------|------|------|------|------|------|
+| r(R IC_64, IC_32) | 1.00000 | 0.99960 | 0.99541 | 0.97370 | 0.91230 | 0.75915 |
+| P_R/P_32 | 0.9999 | 0.9992 | 0.9871 | 0.9417 | 0.8238 | 0.5995 |
+
+So the white noise IS shared -- r = 1 to five decimals at low k -- and the two ICs diverge
+progressively toward the COARSE Nyquist, i.e. each level's IC generator discretises
+differently where the coarse grid is least able to represent the field. This is Sec. 2.3's
+(A)-vs-(B) distinction appearing in the initial conditions themselves, and the production
+data very likely has the same property (its r(coarse, R fine) is also 1.00000 at low k).
+**This does not block the method**: the physical coupling needs only the FINE IC octave,
+which is exact. It does mean the phase0 nestedness check cannot be used as an offset probe
+on MP-GenIC output, and that "nested ICs" in the notes should be read as "shared white
+noise", not "bitwise truncation".
+
+### First Phase 0 on N-body data WITH ICs (32->64, offset 0, growth 76.7439)
+
+`python phase0_octaves.py --levels 32 64 --box 100000 --dis "data/selfsim/dis_{N}.npy" --ic "data/selfsim/ic_dis_{N}.npy" --offset 0 --growth 76.7439 --out runs/selfsim_32to64`
+
+- rms(eps)/h_c: sphere 0.1947, cube 0.1898, **haar 0.2893**; slopes P_eps/P_div =
+  +0.14/+2.01 (sphere and cube), -2.03/-0.09 (haar).
+- multistream frac 0.293, var(d/h_f) 0.1411, kurt +1.42.
+- coarse-only harmonics: P_harm/P_d = 0.213, P_harm/P_nl = 0.201, but
+  **r(d, harm) = -0.031 and r(d_nl, harm) = -0.019, i.e. no correlation at all.**
+
+TO RE-CHECK BEFORE ANY OF THIS IS USED (written at 03:00, deliberately not interpreted):
+1. The harmonics term has 20% of the detail's power but ZERO correlation with it. In the
+   de-aliased 2LPT self-test the same diagnostic gave r = 0.45. Either the 2LPT harmonic
+   prediction simply does not describe the detail of a z=0 N-body run (plausible: 29% of the
+   volume is multi-stream and higher orders dominate), or the growth scaling / the use of a
+   non-nested ic_c is corrupting it. Zero correlation with non-zero power is exactly what a
+   wrong amplitude-and-phase prediction looks like, so do NOT read "20% of the detail is
+   deterministic" out of this number until it is understood.
+2. Haar is the WORST R here (0.2893) but was the BEST on the production 64/128 pair (0.2429
+   vs cube 0.2743). Opposite orderings on two real datasets; the transitions differ (32->64
+   vs 64->128) and so does the IC provenance. Needs the same transition on both.
+3. The slopes here (+0.14/+2.01) are closer to the ideal 2/4 than the production pair's
+   (-0.16/+1.70), even though this pair has the extra non-nested-IC error. Unexplained.
+
+### Grid-offset conventions disagree between the two datasets
+
+MP-GenIC's own ICs want offset 0 (rms|x-q|/h = 0.066 vs 0.87 at 0.5) -- a direct measurement
+on the z=99 snapshot, which is the definitive test. The production `disp.npy` files instead
+preferred offset 0.5 in the rms(eps) probe. Both can be true: those files were produced by
+someone else's converter, which chose its own q convention. Worth asking the owner which
+convention their conversion used, because a half-cell error is a real systematic in eps.
+
+### Where this leaves training
+
+Unblocked for the self-run pair: `octave_flow_toy.py --nc 32 --nf 64 --dis
+"data/selfsim/dis_{N}.npy" --ic "data/selfsim/ic_dis_{N}.npy" --growth 76.7439` needs the
+`{seed}` placeholder too, so a multi-seed set has to be generated first (one seed per
+MP-GenIC run; 21 s + 104 s each, so 8 seeds is ~20 min). Not started.

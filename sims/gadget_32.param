@@ -1,0 +1,23 @@
+InitCondFile = /Users/zhangxiaowen/AntigravityProjects/progressive-sr/data/selfsim/N32/IC
+OutputDir = /Users/zhangxiaowen/AntigravityProjects/progressive-sr/data/selfsim/N32
+OutputList = 1.0
+
+TimeLimitCPU = 43000
+TimeMax = 1.00000
+
+Omega0 = 0.2814
+OmegaLambda = 0.7186
+OmegaBaryon = 0.0464
+HubbleParam = 0.697
+
+CoolingOn = 0
+StarformationOn = 0
+RadiationOn = 1
+BlackHoleOn = 0
+MetalReturnOn = 0
+DensityIndependentSphOn = 1
+HydroOn = 0
+WindOn = 0
+MassiveNuLinRespOn = 0
+
+SnapshotWithFOF = 0
