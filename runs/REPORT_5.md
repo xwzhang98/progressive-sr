@@ -150,3 +150,76 @@ correct evaluation. Any future `--eval-only` of a regression checkpoint must pas
   Unexplained, and it means rms(eps) is not portable between datasets. It does not touch the
   no-Haar convention, which rests on the random linear-order aliasing that rms(eps) never
   measures.
+
+---
+
+## Addendum, after reading notes v3 §"What the real N-body data changes" in full
+
+Three checks the report above did not make. The first two confirm notes v3; the third is a
+concrete contradiction already stated in the body, repeated here against the notes' wording.
+
+### G(k) is the Gaussian damping the notes claim, but not at the displacement dispersion
+
+Notes v3 identifies `G` as the Lagrangian propagator whose leading form is the
+`exp(-k^2 sigma_Psi^2 / 2)` damping of Lagrangian resummation. Testable: invert each shell,
+`sigma_eff(k) = sqrt(-2 ln G) / k`, which is constant if and only if the form is Gaussian.
+
+| k/k_Ny,c | 1.00 | 1.25 | 1.50 | 1.75 | 1.94 |
+|----------|------|------|------|------|------|
+| G(k) | 0.703 | 0.527 | 0.417 | 0.350 | 0.321 |
+| sigma_eff [kpc/h] | 835 | 900 | 877 | 823 | 774 |
+
+**sigma_eff = 857 +- 41 kpc/h, constant to 4.8% across the whole octave band** — so the shape
+is Gaussian to good accuracy (with a slight rise-then-fall that a pure Gaussian would not have).
+**But the scale is not sigma_Psi**: the full 1D displacement dispersion is 4446 kpc/h, so
+sigma_eff / sigma_Psi = 0.193, i.e. 0.55 fine cells.
+
+That is physically sensible — the bulk displacement lives in the coarse band and translates an
+octave-wavelength patch almost uniformly, so it cannot decorrelate octave modes; only the
+differential displacement can. It is worth pinning down exactly which dispersion sigma_eff is,
+because **if G can be predicted rather than fitted, the source can be built at a level where no
+training pairs exist** — which is exactly the situation at the end of a progressive chain, and
+a prerequisite for weight sharing across levels.
+
+### 1 - r^2 of the source matches the notes' 0.69
+
+Notes v3 states that the fraction of the detail variance no linear map can supply is 0.69 on
+this pair. Measured independently in Phase 0 panel (b): band-averaged `r` = 0.5561, so
+`1 - r^2` = **0.679**. Consistent.
+
+### "the single-stream fraction is where regression and flow should coincide" — they do not
+
+The notes make this prediction twice, and the R1-R4 rms split refutes it directly: in the
+single-stream part the regression error is 0.282 h_f against the flow's 0.373, a 24% gap that
+is 60x the seed-to-seed scatter. The regression is better in the multi-stream part too (0.380
+vs 0.490). Whatever separates the two objectives, it is not confined to the multi-stream
+patches — consistent with panel (c), where the excess kurtosis of the detail is *lower* inside
+the patches than outside under either the coarse or the fine mask.
+The notes' prediction about *power* — `r` below 1 with `P/P_true` at 1 — does hold globally
+(flow 0.98-1.13, regression 0.69 on the r^2 line). Whether the power deficit itself is
+localised in the multi-stream patches remains untested: it needs a masked power spectrum,
+which no script here computes.
+
+### One suggestion in notes v3 that has not been tried
+
+"in emulator mode the cleanest input is the whole fine initial condition rather than its
+octave (Paper IV's choice), which removes chi' from the unknowns" — the non-nestedness residual
+chi' is real on this data (IC `r` = 0.76 at the coarse Nyquist). Feeding the full fine IC
+instead of its octave band is a cheap experiment and would separate "the model cannot use the
+octave" from "the octave it is given is incomplete". Not run.
+
+### Phase-0 panel (c) per-bin tables (the figure is `fig_conditional_real.png`)
+
+Self-run 32->64, z=0, quantile bins of the coarse `delta_L = -tr D`:
+
+| bin centre `delta_L` | -3.6 | -1.8 | -0.8 | -0.35 | 0.07 | 0.56 | 1.12 | 1.89 | 4.48 |
+|---|---|---|---|---|---|---|---|---|---|
+| var(d/h_f) | 0.086 | 0.106 | 0.118 | 0.132 | 0.142 | 0.155 | 0.167 | 0.176 | 0.152 |
+| excess kurtosis | 1.25 | 1.20 | 1.16 | 1.21 | 1.24 | 1.11 | 1.12 | 1.20 | 1.72 |
+
+Production 64->128, same binning: var rises 0.153 -> 0.323 and falls back to 0.251, with excess
+kurtosis 4.50 -> 2.42 -> 2.75. In both datasets the variance responds strongly to the local
+`delta_L` (a factor 2) while the kurtosis stays flat and well above 1, so conditioning on the
+local jet does not Gaussianise the detail — the "close to Gaussian outside the multi-stream
+patches" criterion of KICKOFF_STAGE5 fails on the production pair (kurtosis 3.43 outside) and
+is only marginal on the self-run pair (1.37).
