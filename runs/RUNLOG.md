@@ -831,3 +831,28 @@ P/P_true = 1.292, rms 0.816 h_f (multi/single 0.896/0.764).
 `runs/selfsim128_train.sh` launched: F1 flow + F2 regression, 1500 steps each, ~6.3 h total,
 `--octave-sampler full` so the in-run generative lines use the corrected octave (training is
 physical-coupling, so the sampler never enters it).
+
+## 2026-09-09 15:45 — the 64->128 runs are pausable and resumable (tested, not assumed)
+
+The first launch of `runs/selfsim128_train.sh` was NOT resumable: `octave_flow_toy.py` writes
+`train_state.pt` only when `--max-seconds` fires or training completes, so a kill mid-run loses
+everything. Rewritten to run each training as a sequence of `--max-seconds $CHUNK --resume`
+invocations (CHUNK = 900 s by default), looping until `results.json` appears.
+
+  touch runs/PAUSE     # current chunk finishes, saves, driver exits cleanly
+  rm runs/PAUSE        # then relaunch the same nohup command to carry on
+
+Verified end to end rather than assumed:
+- chunk 1 ran to step 115, wrote train_state.pt (25 MB), chunk 2 printed "resumed from step
+  115" and continued;
+- `touch runs/PAUSE` while chunk 2 was running: it finished at step 233, saved, printed
+  "PAUSED", and exited with zero python processes left;
+- checkpoint contains step / model / ema / opt / log / base;
+- `rm runs/PAUSE` + relaunch printed "resumed from step 233" and carried on.
+
+Cost of chunking: ~40 s of start-up (loading nine 128^3 pairs plus the baseline evaluation) per
+900 s chunk, i.e. 4.4%. A hard kill costs at most one chunk. At 7.7 s/step, 1500 steps is ~3.35 h
+per run, ~6.7 h for the pair.
+Note that `--resume` reseeds the batch sampler as `default_rng(seed + step0)`, so a chunked run
+does not see the same batch order as an uninterrupted one; irrelevant for the comparison but
+worth knowing if an exact rerun is ever needed.
