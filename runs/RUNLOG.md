@@ -856,3 +856,20 @@ per run, ~6.7 h for the pair.
 Note that `--resume` reseeds the batch sampler as `default_rng(seed + step0)`, so a chunked run
 does not see the same batch order as an uninterrupted one; irrelevant for the comparison but
 worth knowing if an exact rerun is ever needed.
+
+## 2026-09-09 18:32 — paused at the owner's request
+
+`touch runs/PAUSE`; the running chunk finished at step 1316/1500 of F1 (flow, 64->128),
+saved `runs/F_flow_128/train_state.pt`, and the driver exited with no python processes left.
+F2 (regression, 64->128) has not started. Nothing else was running.
+
+To resume:
+    cd /Users/zhangxiaowen/AntigravityProjects/progressive-sr
+    rm runs/PAUSE
+    PYTHONUNBUFFERED=1 nohup runs/selfsim128_train.sh >> runs/selfsim128_train.log 2>&1 &
+F1 needs ~24 min more, then F2 takes ~3.4 h, so ~3.8 h to finish the pair.
+
+Loss so far, 64->128 flow: 6.42e-1 (step 1) -> 3.29e-1 (234) -> 2.07e-1 (1198) -> 1.94e-1
+(1275). About twice the 32->64 flow's trajectory at the same step, consistent with the harder
+baseline there (octave r = 0.394 against 0.555, rms 0.816 against 0.577 h_f). No evaluation
+numbers yet: they are only written when a run completes.
