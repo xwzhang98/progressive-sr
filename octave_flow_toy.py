@@ -78,6 +78,7 @@ class Scaffold:
         ax, c_ax, az = p0._coarse_slices(Nf, Nc)
         self.ax, self.c_ax, self.az = (torch.from_numpy(a).to(device) for a in (ax, c_ax, az))
         self.kf_shell = None  # filled by fit_linear_power
+        self.filters_fitted = False
 
     # -- P: zero padding + phase (batched, (B,3,Nc,Nc,Nc) -> (B,3,Nf,Nf,Nf)) --------
     def prolong(self, xc):
@@ -126,6 +127,53 @@ class Scaffold:
         Pm = np.interp(g.kmag.ravel(), g.kshell, P).reshape(g.kmag.shape)
         A = np.sqrt(np.maximum(Pm, 0) / ((g.L / g.N**2) ** 3 * g.N**3))
         self.A_delta = torch.from_numpy(A.astype(np.float32)).to(self.fdev)
+
+    def fit_source_filters(self, train, growth=1.0):
+        """Data-driven linear source (the best linear prediction of Psi_f, mode by mode):
+             coarse band : Tc(k) = P_{c x f}/P_{c c}   applied to P Psi_c   (Wiener estimate of R Psi_f)
+             octave band : G(k)  = P_{d x lin}/P_{lin} applied to the linear octave (its propagator)
+           Both are isotropic multipliers measured on the training pairs; they leave the
+           information content of the state unchanged and only shorten x1 - x0.  On real N-body
+           data at z=0 the raw linear octave overshoots the true detail power (G < 1) and the
+           coarse run is wrong near its Nyquist (Tc < 1)."""
+        g = self.gf; W = self.W.cpu().numpy()
+        Pcc = np.zeros(g.nshell); Pcf = np.zeros(g.nshell); Pll = np.zeros(g.nshell); Pdl = np.zeros(g.nshell)
+        for it in train:
+            Fc = p0.rfftn(self.prolong(torch.from_numpy(it["dis_c"][None]))[0].cpu().numpy())
+            Ff = p0.rfftn(it["dis_f"].astype(np.float32))
+            Fl = p0.rfftn((it["ic_f"] * growth).astype(np.float32)) * (1 - W)
+            Fd = Ff * (1 - W)
+            Pcc += g.shell_avg((np.abs(Fc) ** 2).sum(0)); Pcf += g.shell_avg((Fc * np.conj(Ff)).real.sum(0))
+            Pll += g.shell_avg((np.abs(Fl) ** 2).sum(0)); Pdl += g.shell_avg((Fd * np.conj(Fl)).real.sum(0))
+        Tc = np.where(Pcc > 0, Pcf / np.maximum(Pcc, 1e-30), 1.0)
+        G = np.where(Pll > 0, Pdl / np.maximum(Pll, 1e-30), 1.0)
+        # shell estimates are noisy where shells hold few modes: smooth over 5 shells and pin the
+        # coarse-band filter to 1 below 0.3 k_Ny,c (the coarse run is exact there up to the white floor)
+        def smooth(x):
+            xs = x.copy(); n = len(x)
+            for i in range(n):
+                lo, hi = max(0, i - 2), min(n, i + 3); xs[i] = np.mean(x[lo:hi])
+            return xs
+        Tc, G = smooth(Tc), smooth(G)
+        Tc[g.kshell < 0.3 * self.knyc] = 1.0
+        Tc = np.clip(Tc, 0.0, 1.5); G = np.clip(G, 0.0, 1.5)
+        Tm = np.interp(g.kmag.ravel(), g.kshell, Tc).reshape(g.kmag.shape)
+        Gm = np.interp(g.kmag.ravel(), g.kshell, G).reshape(g.kmag.shape)
+        self.Tc = torch.from_numpy((Tm * W).astype(np.float32)).to(self.fdev)       # acts inside W only
+        self.G = torch.from_numpy((Gm * (1 - W)).astype(np.float32)).to(self.fdev)  # acts outside W only
+        sel = (g.shell_norm > 0) & (g.kshell > 0)
+        kk = g.kshell[sel] / self.knyc
+        def at(x, q):
+            i = np.argmin(np.abs(kk - q)); return float(x[sel][i])
+        print("source filters: Tc(k/kNy,c) = " + ", ".join(f"{q:.2f}:{at(Tc, q):.3f}" for q in (0.25, 0.5, 0.75, 0.95))
+              + " | G(k/kNy,c) = " + ", ".join(f"{q:.2f}:{at(G, q):.3f}" for q in (1.05, 1.3, 1.6, 1.9)))
+        self.filters_fitted = True
+
+    def apply_filter(self, x, which):
+        """multiply a fine field by Tc (which='low') or G (which='high') in Fourier space."""
+        x = x.to(self.fdev)
+        Fx = torch.fft.rfftn(x, dim=(-3, -2, -1)) * (self.Tc if which == "low" else self.G)
+        return torch.fft.irfftn(Fx, s=x.shape[-3:], dim=(-3, -2, -1)).to(self.device)
 
     def sample_linear_octave(self, B, gen=None):
         """Gaussian linear displacement restricted to the octave band, curl-free: Psi = i k delta / k^2."""
@@ -249,9 +297,10 @@ def load_real(dis_pat, ic_pat, Nc, Nf, seeds):
 class Batcher:
     """Builds (x0, x1, cond) on the device from raw numpy fields, with augmentation."""
 
-    def __init__(self, sc, data, rng, augment_on=True, growth=1.0, coupling="physical"):
+    def __init__(self, sc, data, rng, augment_on=True, growth=1.0, coupling="physical", source_filter="none"):
         self.sc, self.data, self.rng, self.aug, self.growth = sc, data, rng, augment_on, growth
         self.coupling = coupling   # physical: x0 uses the true IC octave of x1; independent: a fresh sample
+        self.source_filter = source_filter
 
     def make(self, items, eta="true", gen=None):
         sc = self.sc
@@ -263,10 +312,14 @@ class Batcher:
             lin = sc.band(icf * self.growth, "high")              # true linear octave
         else:
             lin = sc.sample_linear_octave(dc.shape[0], gen) * self.growth
-        x0 = (Pc + lin) / sc.hf
+        if self.source_filter == "wiener":
+            Pc_src, lin = sc.apply_filter(Pc, "low"), sc.apply_filter(lin, "high")
+        else:
+            Pc_src = Pc
+        x0 = (Pc_src + lin) / sc.hf
         x1 = df / sc.hf
-        D = sc.gradients(Pc)                                       # dimensionless
-        return x0, x1, Pc / sc.hf, D
+        D = sc.gradients(Pc)                                       # dimensionless, from the unfiltered coarse run
+        return x0, x1, Pc_src / sc.hf, D
 
     def sample(self, B):
         items = []
@@ -323,7 +376,20 @@ def band_spectra(sc, a, b):
     return lo, hi
 
 
-def summarize(sc, name, pred, true):
+_MS_MASK = {}
+
+
+def multistream_mask(sc, dis_c):
+    """fine-grid boolean mask of the coarse run's multi-stream Lagrangian patches, det(I + D^L) < 0."""
+    key = id(dis_c)
+    if key not in _MS_MASK:
+        gc = p0.Grid(sc.Nc, sc.L)
+        inv = p0.coarse_invariants(np.asarray(dis_c, dtype=np.float32), gc)
+        _MS_MASK[key] = p0._up2(inv["detJ"] < 0)
+    return _MS_MASK[key]
+
+
+def summarize(sc, name, pred, true, ms=None):
     lo, hi = band_spectra(sc, pred, true)
     # restrict the low band to k < 0.9 kny,c to avoid the shell straddling the sphere edge
     m = lo["k"] < 0.9 * sc.knyc
@@ -336,8 +402,15 @@ def summarize(sc, name, pred, true):
         k_high=hi["k"].tolist(), r_high_k=hi["r"].tolist(),
         Pratio_high_k=(hi["Paa"] / np.maximum(hi["Pbb"], 1e-30)).tolist(),
     )
+    extra = ""
+    if ms is not None and ms.any() and (~ms).any():
+        e2 = ((pred - true) ** 2).mean(0)      # per-component, like rms_err_over_h
+        out["rms_err_over_h_multistream"] = float(np.sqrt(e2[ms].mean()) / sc.hf)
+        out["rms_err_over_h_singlestream"] = float(np.sqrt(e2[~ms].mean()) / sc.hf)
+        out["multistream_fraction"] = float(ms.mean())
+        extra = f" (multi/single-stream: {out['rms_err_over_h_multistream']:.3f}/{out['rms_err_over_h_singlestream']:.3f})"
     print(f"  {name:28s} octave: r={out['r_high']:.3f}  P/P_true={out['ratio_P_high']:.3f} | "
-          f"coarse band: r={out['r_low']:.4f}  P_eps/P={out['eps_rel_low']:.2e} | rms err/h_f={out['rms_err_over_h']:.3f}")
+          f"coarse band: r={out['r_low']:.4f}  P_eps/P={out['eps_rel_low']:.2e} | rms err/h_f={out['rms_err_over_h']:.3f}{extra}")
     return out
 
 
@@ -361,6 +434,9 @@ def main():
     ap.add_argument("--nsteps-sample", type=int, default=8)
     ap.add_argument("--eval-only", type=str, default=None,
                     help="path to a saved model_ema.pt: skip training, only evaluate (e.g. sampler-step sweeps)")
+    ap.add_argument("--source-filter", type=str, default="none", choices=["none", "wiener"],
+                    help="wiener: x0 = P[Tc Psi_c] + G * linear octave with Tc, G measured on the training set "
+                         "(best linear prediction; recommended on real N-body data)")
     ap.add_argument("--coupling", type=str, default="physical", choices=["physical", "independent"],
                     help="training coupling: physical (x0 built from the true octave of x1) or independent "
                          "(x0 built from a fresh sampled octave; same marginals, uninformative source)")
@@ -397,14 +473,19 @@ def main():
     sc = Scaffold(args.nc, args.nf, args.box, args.offset, args.alpha, dev, fft_device=args.fft_device, window=args.window)
     print(f"spectral ops on {sc.fdev}, network on {dev}, window={args.window}")
     sc.fit_linear_power([it["ic_f"] * args.growth for it in train])
-    batcher = Batcher(sc, train, rng, augment_on=not args.no_augment, growth=args.growth, coupling=args.coupling)
+    if args.source_filter == "wiener":
+        sc.fit_source_filters(train, growth=args.growth)
+    batcher = Batcher(sc, train, rng, augment_on=not args.no_augment, growth=args.growth, coupling=args.coupling,
+                      source_filter=args.source_filter)
     print(f"training coupling: {args.coupling}" + ("  (regression baseline, t=0 only)" if args.regression else ""))
     s_level = torch.zeros(args.batch, device=dev)  # scale/style scalar: constant for a single transition
 
     # ---- baseline: x0 alone (linear octave, no learning) ----------------------
-    print("baseline (x0 = P Psi_c + linear octave, no network):")
+    print("baseline (x0 = P Psi_c + linear octave, no network" + (", wiener-filtered source)" if args.source_filter == "wiener" else "):"))
     x0_te, x1_te, Pc_te, D_te = batcher.make(test, eta="true")
-    base = summarize(sc, "x0 (true octave)", (x0_te[0] * sc.hf).cpu().numpy(), (x1_te[0] * sc.hf).cpu().numpy())
+    ms = multistream_mask(sc, test[0]["dis_c"])
+    print(f"test box: multi-stream fraction of the coarse run = {ms.mean():.3f}")
+    base = summarize(sc, "x0 (true octave)", (x0_te[0] * sc.hf).cpu().numpy(), (x1_te[0] * sc.hf).cpu().numpy(), ms)
 
     # ---- train ------------------------------------------------------------------
     ckpt = None
@@ -469,14 +550,14 @@ def main():
         print("regression baseline: evaluating with a single Euler step")
     print("emulator mode (true octave as source):")
     xe = sample_flow(model, x0_te, Pc_te, D_te, s_te, nsteps=args.nsteps_sample)
-    emu = summarize(sc, f"flow, {args.nsteps_sample} Heun steps", (xe[0] * sc.hf).cpu().numpy(), true[0])
+    emu = summarize(sc, f"flow, {args.nsteps_sample} Heun steps", (xe[0] * sc.hf).cpu().numpy(), true[0], ms)
     x1e = sample_flow(model, x0_te, Pc_te, D_te, s_te, nsteps=1, method="euler")
-    emu1 = summarize(sc, "flow, 1 Euler step (=regression)", (x1e[0] * sc.hf).cpu().numpy(), true[0])
+    emu1 = summarize(sc, "flow, 1 Euler step (=regression)", (x1e[0] * sc.hf).cpu().numpy(), true[0], ms)
     print("generative mode (sampled Gaussian octave):")
     gen = torch.Generator(device=sc.fdev).manual_seed(1)
     x0_g, _, _, _ = batcher.make(test, eta="sample", gen=gen)
     xg = sample_flow(model, x0_g, Pc_te, D_te, s_te, nsteps=args.nsteps_sample)
-    gen1 = summarize(sc, "flow, sampled octave A", (xg[0] * sc.hf).cpu().numpy(), true[0])
+    gen1 = summarize(sc, "flow, sampled octave A", (xg[0] * sc.hf).cpu().numpy(), true[0], ms)
     x0_g2, _, _, _ = batcher.make(test, eta="sample", gen=gen)
     xg2 = sample_flow(model, x0_g2, Pc_te, D_te, s_te, nsteps=args.nsteps_sample)
     gen2 = summarize(sc, "sample A vs sample B", (xg[0] * sc.hf).cpu().numpy(), (xg2[0] * sc.hf).cpu().numpy())

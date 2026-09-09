@@ -19,6 +19,9 @@ Method ("octave flow"), fixed unless the owner says otherwise:
 - Conditional flow matching with the **physical coupling**:
   `x0 = P Psi_c + Psi_lin[eta]`, `x1 = Psi_f`, where `eta` is the true IC octave in
   training, and a Gaussian octave with the measured linear P_delta(k) at sampling.
+  On real N-body data use `--source-filter wiener` (notes v3): `x0 = P[Tc Psi_c] + G Psi_lin[eta]`
+  with the Wiener/propagator filters measured on the training set — the best linear
+  prediction; linear theory is its perturbative limit.
 - Network sees only translation-invariant, dimensionless inputs: the residual
   `x_t - P Psi_c` (units of h_f) and the coarse deformation tensor `D_ij = d_i Psi_j`.
 - No GAN, no learned `P`, no Haar (Haar puts a deterministic linear-order mismatch
@@ -27,6 +30,12 @@ Method ("octave flow"), fixed unless the owner says otherwise:
 The theory is in `notes/octave_flow_derivation.pdf` (English, v2 after review) and
 `notes/octave_flow_physics.pdf` (Chinese, physics-style); the project overview is
 `notes/progressive_sr_brainstorm.md`. Read them before changing anything physical.
+Real-data facts that changed the notes (v3, Sec. "What the real N-body data changes"): at
+z=0 the linear octave explains only r^2~0.3 of the detail and overshoots its power (G<1);
+the coarse run is O(1) wrong near its Nyquist (P_eps/P_c = 0.57 at 0.94 k_Ny,c); 30-40% of the
+Lagrangian volume is multi-stream, which is where regression and flow are expected to differ;
+MP-GenIC ICs share white noise but are not bitwise nested near k_Ny,c; 2LPT harmonics are
+uncorrelated with the z=0 detail. Report every metric split by the multi-stream mask.
 Known subtleties (all in the notes, Sec. "What is proven"): the detail band also
 contains deterministic harmonics of the coarse modes; the one-step (regression) limit
 is not necessarily power-deficient under full physical conditioning; the Markov

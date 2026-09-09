@@ -87,6 +87,11 @@ flow-matching loss with cubic-group augmentation, then evaluates on a held-out s
   r(sample A, sample B) is ~0 in the octave band but 1 in the coarse band.
 
 Outputs: `results.json`, `model_ema.pt`, `summary.png` (loss, r(k), P ratio).
+`--source-filter wiener` replaces the linear-theory source by the best linear prediction,
+`x0 = P[Tc Psi_c] + G * linear octave`, with `Tc = P_cf/P_cc` (coarse band) and
+`G = P_{d x lin}/P_lin` (octave band) measured on the training pairs (notes v3, Sec. "What the
+real N-body data changes"). On 2LPT data both filters are ~1; on real z=0 data G ~ 0.5.
+Evaluation also prints the rms error split by the coarse run's multi-stream patches.
 `--regression` trains the same network as a direct one-step regressor (t=0 only) and
 evaluates it with one Euler step: the fair baseline for any multi-step claim.
 `--coupling independent` builds the training source from a fresh sampled octave (same

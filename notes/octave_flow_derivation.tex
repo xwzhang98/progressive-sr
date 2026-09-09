@@ -37,7 +37,7 @@
 
 \title{Progressive $2\times$ super-resolution of Lagrangian $N$-body fields:\\ a self-contained derivation of the ``octave flow'' method}
 \author{Notes prepared for Xiaowen Zhang}
-\date{September 8, 2026 (v2, revised after review)}
+\date{September 9, 2026 (v3: v2 after review, plus Section~\ref{sec:real} on real $N$-body data)}
 
 \begin{document}
 \maketitle
@@ -551,12 +551,63 @@ All spectra are shell averages of $|\hat a|^2$, $|\hat b|^2$ and $\mathrm{Re}(\h
 \end{itemize}
 
 %======================================================================
+\section{What the real $N$-body data changes}\label{sec:real}
+%======================================================================
+
+This section was added after the first Phase-0 measurements on real simulations (production $z=0$ snapshots at $64^3/128^3/256^3$ in $100\,h^{-1}$Mpc, 16 seeds, no initial conditions; and a self-run MP-Gadget $32^3/64^3$ pair with initial conditions, same cosmology, $D(z{=}0)/D(z{=}99)=76.7$). None of the algebra above is affected. What changes is the scope of the perturbative statements, the definition of the source distribution, and the meaning of ``the new randomness''.
+
+\subsection{Measured facts}
+
+On the production $64\to128$ pair (grid offset $\tfrac12$, cube window, seed-to-seed scatter $0.7\%$): the correction has $\mathrm{rms}(\varepsilon)/h_c=0.27$ (the 2LPT toy: $0.001$--$0.004$); $P_\varepsilon(k)$ is flat at low $k$ (slope $-0.16$ for the displacement, $+1.7$ for the divergence) but six decades below $P_{\Psi_c}$ there, and rises to $P_\varepsilon/P_{\Psi_c}=0.03,\,0.13,\,0.37,\,0.57$ at $k/k_{\Ny,c}=0.41,\,0.59,\,0.81,\,0.94$; the coarse--fine correlation $r_{cf}(k)$ is $0.985,\,0.94,\,0.80,\,0.68$ at the same $k$; the Wiener transfer function reaches $0.5$ at $1.07\,k_{\Ny,c}$; the detail has $\Var(d/h_f)=0.25$ with excess kurtosis $3.2$ and the multi-stream proxy $\det(I+D^{L})<0$ holds in $37\%$ of the Lagrangian volume. One level down ($128\to256$) every dimensionless number drifts: $\mathrm{rms}(\varepsilon)/h_c=0.39$, $\Var(d/h_f)=0.47$, kurtosis $6.0$, multi-stream fraction $0.42$. On the self-run $32\to64$ pair with initial conditions: the linear octave alone gives $r=0.555$ and $P_{\rm lin}/P_{\rm true}=1.49$ in the octave band, i.e.\ it explains $r^2=31\%$ of the detail variance and overshoots its power; the coarse-only 2LPT harmonics carry $20\%$ of the detail power but are uncorrelated with it ($r=-0.03$); the MP-GenIC initial conditions of the two levels share their white noise ($r=1.00000$ at low $k$) but are not bitwise nested near the coarse Nyquist ($r=0.76$, power ratio $0.60$ at $k_{\Ny,c}$).
+
+\subsection{Scope of the perturbative sections}
+
+Sections~\ref{sec:linear}--\ref{sec:2lpt} describe the regime $\sigma(h_\ell,z)\lesssim1$. At $z=0$ and $h_f\le1.6\,h^{-1}$Mpc the octave band ($k\gtrsim1\,h\,$Mpc$^{-1}$) is not in that regime: the linear octave is a poor predictor and 2LPT is useless there (the uncorrelated harmonics are perturbation theory failing, not a bug). The structural conclusions survive --- the coarse field still enters through $D_{ij}$, the octave is still the only genuinely new randomness at the level of initial conditions, the cube split is still exact --- but every quantitative statement about ``small'' corrections and ``short'' paths must be re-derived from data. Three modifications follow.
+
+\subsection{The source becomes the best linear prediction}
+
+Linear theory is one particular linear map from $(\Psic,\eta)$ to a guess for $\Psif$. The optimal isotropic linear map is obtained mode by mode by least squares:
+\begin{equation}
+T_c(k)=\frac{P_{cf}(k)}{P_{cc}(k)}\ \text{ on the coarse band},\qquad
+G(k)=\frac{P_{d\times\lin}(k)}{P_{\lin}(k)}\ \text{ on the octave band},
+\label{eq:filters}
+\end{equation}
+where $P_{cf}$ is the cross power of the prolonged coarse run with the fine run, and $P_{d\times\lin}$ the cross power of the detail with the linear octave. The revised source is
+\begin{equation}
+\boxed{\ x_0=P\big[T_c\,\Psic\big]+G\,D\,\Zel\hat\eta\ }
+\label{eq:x0v3}
+\end{equation}
+and $\E\|x_1-x_0\|^2$ is minimal among sources of this form (each mode is an independent least-squares problem; $T_c=P_{cf}/P_{cc}$ and $G=P_{d\lin}/P_{\lin}$ are the regression coefficients). In the perturbative regime $T_c,G\to1$ and \eqref{eq:x0v3} reduces to \eqref{eq:x0}. Physically $G$ is the Lagrangian propagator of the displacement, $\langle\hat\Psi\hat\Psi^{(1)*}\rangle/P^{(1)}$, whose leading-order form is the Gaussian damping $\exp(-k^2\sigma_\Psi^2/2)$ of Lagrangian resummation (Matsubara 2008); this is why the raw linear octave overshoots at $z=0$. $T_c$ is the coarse-run analogue: the linear estimate of $R\Psif$ from a coarse run that is wrong near its Nyquist. Both are measured on the training set (smoothed over shells, $T_c$ pinned to $1$ below $0.3k_{\Ny,c}$ where only the white floor remains); they are deterministic, so the information content of the state is unchanged and Theorem~\ref{thm:fm} applies verbatim. The quantity $1-r^2$ of the source against the truth ($0.69$ in the octave band of the self-run pair) is the fraction of the detail variance that \emph{no} linear map can supply; it is the work left for the nonlinear model.
+
+\subsection{Nested initial conditions become shared white noise}
+
+Proposition~\ref{prop:linear}(i) assumed $\hat\delta_c=W_{\rm cube}\hat\delta_f$. Generators that run separately per resolution share the white noise but discretise the field differently near the coarse Nyquist, so $\chi':=W\hat\delta_f-\hat\delta_c\neq0$ there. $\chi'$ is deterministic given the seed but is not a function of $(\Psic,\eta)$; in the mixture \eqref{eq:mixture} it is part of the residual uncertainty $p(\delta_c\mid C)$, and at first order it contributes $D\Zel\hat\chi'$ to the correction. Two consequences: the nestedness check of Section~\ref{sec:linear} cannot serve as a grid-offset probe on such data (the offset is read off the $z_{\rm init}$ snapshot instead), and in emulator mode the cleanest input is the whole fine initial condition rather than its octave (Paper IV's choice), which removes $\chi'$ from the unknowns. In generative mode $\chi'$ stays stochastic; its size is bounded by the measured $1-r^2$ of the initial conditions near $k_{\Ny,c}$.
+
+\subsection{The correction is not small near the Nyquist scale}
+
+The $k^2$ law of Proposition~\ref{prop:k2} is invisible on this data: the discreteness floor dominates at low $k$ (harmless, six decades down) and near $k_{\Ny,c}$ the coarse run is simply wrong ($P_\varepsilon/P_{\Psi_c}=0.57$, $r_{cf}=0.68$). The correction therefore splits into a Wiener-predictable part, supplied by $T_c$ in the source, and a residual whose relative variance is $1-r_{cf}^2(k)$ (about $0.54$ at $0.94\,k_{\Ny,c}$). The earlier picture of a small, local, near-deterministic correction head is replaced by: deterministic linear part in the source, nonlinear residual handled by the same network as the detail, both concentrated in the top third of the coarse band. Note that $r_{cf}$ stays well above zero up to $k_{\Ny,c}$, which is the quantitative reason not to discard those modes (cube, not sphere).
+
+\subsection{The information-limited conditional}
+
+Section~\ref{sec:push} is exact: given $(C,\eta)$ with $C$ determining $\delta_c$, $\Psif$ is determined. On the self-run data $29\%$, and on the production data $37$--$42\%$, of the Lagrangian volume is multi-stream, and there the map $\eta\mapsto\Psif$ is chaotic: its Jacobian has singular values that grow exponentially with the number of orbital times since collapse. Let $\mathcal I_\epsilon$ denote $(C,\eta)$ known to relative precision $\epsilon$ (finite training data, finite network, finite arithmetic). The conditional variance $\Var(\Psif\mid\mathcal I_\epsilon)$ is then $O(\epsilon^2)$ in single-stream regions but $O(1)$ in multi-stream regions for any practical $\epsilon$, because the required precision decreases exponentially with the number of dynamical times. Operationally, the multi-stream fraction is the fraction of the volume in which the regressor of Section~6.5 sits on the line $P/P_{\rm true}=r^2$ and a distributional objective is needed; the single-stream fraction is where regression and flow should coincide. This is the statement that replaces ``chaos does not matter in exact arithmetic'': it does not matter for the exact conditional, and it matters for every conditional a model can represent. The comparison of the regression baseline with the flow on real data is the test of this section; the prediction is that the flow's advantage, if any, appears as $r$ falling below $1$ with $P/P_{\rm true}$ staying at $1$, concentrated in multi-stream Lagrangian patches.
+
+\subsection{Conditional Gaussianity and universality}
+
+The unconditional detail has excess kurtosis $3$--$6$ at $z=0$; the near-Gaussian conditional hypothesis of Section~\ref{sec:2lpt} can only be meant conditionally on the local $D^L_{ij}$ and must be read off the binned statistics of Phase~0 panel~(c) --- inside the multi-stream patches it will fail, and that is where the flow is expected to matter. The level-to-level drift of every dimensionless quantity at fixed $z$ is what the style variable $s_\ell$ of Section~\ref{sec:ss} has to absorb; the measured $40$--$90\%$ changes between $64\to128$ and $128\to256$ mean that weight sharing across levels needs, at minimum, $\sigma(h_\ell,z)$ and the local multi-stream indicator as conditioning inputs, and remains an assumption to be tested with a shared model rather than assumed.
+
+\subsection{Revised method statement}
+
+Cube window; source \eqref{eq:x0v3} with $T_c,G$ measured on the training set; physical coupling; the regression baseline and the flow trained side by side with identical inputs; the quantities to report are the octave-band $(r,P/P_{\rm true})$ and the coarse-band residual, each split by the multi-stream indicator of the coarse field; conditioning on $\sigma(h_\ell,z)$ and the local $D_{ij}$ invariants when sharing weights across levels. Everything in Sections~\ref{sec:linear}--\ref{sec:2lpt} remains the explanation of \emph{why} the inputs and the split are what they are; it is no longer a quantitative description of the operating regime.
+
+%======================================================================
 \section{What is proven, what is assumed, what is measured}
 %======================================================================
 
 Proven above: the operator identities of Section~2; Proposition~\ref{prop:linear}; the split \eqref{eq:eps2} including the coarse-only harmonics in the detail, Lemma~\ref{lem:kernel} and the ensemble form of Proposition~\ref{prop:k2} for the octave--octave term; the locality statement \eqref{eq:B}; the push-forward statement in its mixture form \eqref{eq:mixture} and the Markov property of the full nested chain; Theorem~\ref{thm:fm} and Proposition~\ref{prop:loss}; the information-set form of the regression identity \eqref{eq:r2}; the scale-free level--time correspondence.
 
 Idealisations to keep in view: the push-forward collapses to a single map only when the conditioning determines $\delta_c$; the reduced states actually used (projected fields, patches, finite networks) make it a mixture, and make the reduced chain Markov only approximately; with the sphere window the corner modes are re-sampled although the retained field is informative about them (the cube window avoids this); the $k^2$/$k^4$ law is for the ideal second-order octave--octave term, the mixed term is at least as suppressed, and neither higher orders nor discreteness errors are claimed to share the exponent; the ``$\vartheta$'' spectra are divergences of displacements, not Eulerian densities.
+
+Changes in v3: Section~\ref{sec:real}, added after the first measurements on real $N$-body data --- scope of the perturbative sections, the data-driven source \eqref{eq:x0v3}, shared-white-noise initial conditions, the size of the correction near the Nyquist scale, the information-limited conditional, and the revised method statement.
 
 Changes relative to the first version of these notes, following an external review: the real-space sign of $\Psi^{(2)}$ in \eqref{eq:psi2}; the missing $S[\delta_L]$ term in $d^{(2)}$ of \eqref{eq:eps2}; divergence versus density in Proposition~\ref{prop:k2} and Remark~\ref{rem:density}; the Wick-theorem form of the $k^4$ statement; the mixture form of the conditional and the scope of the Markov property; the removal of the claim that one-step regression necessarily loses power under full physical conditioning and of the claim that the multi-step flow ``adds back'' variance; and the recommendation of the cube window as the theoretical default.
 
