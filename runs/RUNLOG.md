@@ -873,3 +873,62 @@ Loss so far, 64->128 flow: 6.42e-1 (step 1) -> 3.29e-1 (234) -> 2.07e-1 (1198) -
 (1275). About twice the 32->64 flow's trajectory at the same step, consistent with the harder
 baseline there (octave r = 0.394 against 0.555, rms 0.816 against 0.577 h_f). No evaluation
 numbers yet: they are only written when a run completes.
+
+## 2026-09-09 19:55 — F1 (flow, 64->128) and the matched-sigma self-similarity test
+
+### F1: flow + physical coupling, cube, self-run N-body 64->128 at z=0
+
+`runs/F_flow_128`, 1500 steps, batch 1, `--octave-sampler full`, multistream 0.370.
+
+| line | r | P/P | r^2 | coarse eps | rms | multi | single |
+|------|---|-----|-----|------------|-----|-------|--------|
+| baseline | 0.3940 | 1.2923 | 0.1552 | 1.249e-01 | 0.816 | 0.896 | 0.764 |
+| emulator, 8 Heun | 0.5234 | 1.0719 | 0.2739 | 9.088e-02 | 0.683 | 0.766 | 0.629 |
+| emulator, 1 Euler | 0.5829 | 0.6105 | 0.3398 | 8.131e-02 | 0.591 | 0.660 | 0.546 |
+| generative | 0.1496 | 1.1203 | 0.0224 | 1.084e-01 | 0.831 | 0.905 | 0.784 |
+| sample A vs B | 0.1475 | 0.9989 | - | 4.220e-02 | 0.766 | - | - |
+
+The network gains LESS one level down: baseline->emulator is r 0.555 -> 0.722 (+0.167) and rms
+-29% at 32->64, against r 0.394 -> 0.523 (+0.129) and rms -16% here. The accuracy/power split
+inside the flow is sharper: 1-step r 0.583 / P/P 0.611 against 8-step 0.523 / 1.072, where at
+32->64 it was 0.682 vs 0.993. Generative P/P = 1.120 with the corrected sampler.
+
+**CAVEAT, and it limits the above: neither run is converged at 1500 steps.** Over the last
+third the loss still falls by 10.4% (32->64) and 12.8% (64->128), so "the network gains less at
+the finer level" may be partly an undertraining artefact, and the finer level is the one with
+further to go. Do not quote the gain comparison without this. F2 (regression) is running.
+
+### Matched-sigma self-similarity test (Sec. 6), the first on N-body data
+
+sigma_lin measured directly from the ICs rather than assumed from n_eff: the ratio between the
+two coarse cell sizes is 1.3741 (not sqrt(2) = 1.414), so the 64->128 pair matches 32->64 at
+z=0 when D(z)/D(0) = 0.7278, i.e. **a = 0.60964, z = 0.640**, growth D(a)/D(z=99) = 55.8542.
+One extra 64/128 pair was run to that output (`data/selfsim/ss`, 26 min).
+
+| quantity | 32->64 @ z=0 | 64->128 @ z=0.640 | 64->128 @ z=0 | matched agreement |
+|----------|--------------|-------------------|---------------|-------------------|
+| rms(eps)/h_c cube | 0.1898 | **0.1887** | 0.2654 | **-0.6%** |
+| ... sphere | 0.1947 | 0.1960 | 0.2757 | +0.7% |
+| ... haar | 0.2893 | 0.2945 | 0.3936 | +1.8% |
+| multistream frac | 0.2929 | **0.2924** | 0.3693 | **-0.2%** |
+| k(T=0.5)/k_Ny,c | 1.0645 | **1.0630** | 1.0944 | **-0.1%** |
+| var(d/h_f) | 0.1411 | 0.1330 | 0.2420 | -5.8% |
+| k(T=0.8)/k_Ny,c | 0.8784 | 0.9383 | 0.9383 | +6.8% |
+| excess kurtosis | 1.4216 | **2.1267** | 2.7975 | **+49.6%** |
+
+**Self-similarity holds at the level of second moments and fails at the fourth.** Matching
+sigma collapses drifts of +40%, +27% and +72% to well under 1% for the correction amplitude,
+the multi-stream fraction and the Wiener half-power scale, and to 6% for the detail variance —
+across a factor 2 in resolution and a factor 1.37 in sigma. But the excess kurtosis only comes
+down from +97% to +50%: the *shape* of the detail distribution keeps a residual level
+dependence that sigma does not capture.
+
+Note this is not explained by the multi-stream fraction, which matches to 0.2% — so notes v3's
+suggestion that s_l needs "sigma and the local multi-stream indicator" would not fix it either.
+A plausible reading (hypothesis, not tested): kurtosis is dominated by the very smallest
+resolved scales, which sit at the grid scale, a different physical scale at each level, so the
+tails carry a level dependence that no single dimensionless amplitude can absorb.
+
+Operationally, for weight sharing: conditioning on sigma(h_l, z) looks sufficient for everything
+that sets the amplitude of the correction and the detail, which is what the loss is dominated
+by; a model that also has to match the tails will need something more.
