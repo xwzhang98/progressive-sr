@@ -294,3 +294,58 @@ Verified by re-running the command above; `phase0_summary.png` is written again.
   ask the owner whether they exist.
 - Which snapshot PART_009 is (redshift) and the cosmology are not recorded anywhere in the
   data; needed for the growth factor.
+
+## 2026-09-09 01:40 — Stage 4 continued: 256 downloaded, series / seed scatter / alpha
+
+Owner confirmed: no IC snapshots for now (they are on the cluster), and all of this data is
+z = 0. Consequence to record: **real-data TRAINING is blocked, not just diagnostic (b)**.
+`octave_flow_toy.py` needs the FINE-level IC of each pair — `load_real` asserts `ic_f` is
+present, `Batcher.make` builds the source as `sc.band(ic_f * growth, "high")`, and
+`fit_linear_power` measures P_lin from the same ICs. The coarse IC is never needed for
+training (P Psi_c comes from the coarse snapshot); it is needed only for the coarse-only
+harmonics diagnostic. Minimum ask for the cluster: the highest-resolution IC displacement
+per seed, plus z_init and the cosmology for D(z=0)/D(z_init). Per-level ICs are better
+because they re-enable the nestedness check.
+
+### Full series 64 -> 128 -> 256 (set2, offset 0.5)
+
+`python phase0_octaves.py --levels 64 128 256 --box 100000 --dis "data/dmo-{N}/set2/PART_009/disp.npy" --offset 0.5 --out runs/real_series_set2` (9.3 s)
+
+| transition | rms(eps)/h_c sphere / cube / haar | slope P_eps | slope P_div | var(d/h_f) | kurt | multistream |
+|------------|-----------------------------------|-------------|-------------|------------|------|-------------|
+| 64to128    | 0.2836 / 0.2745 / 0.2432 | -0.16 | +1.70 | 0.2535 | +3.16 | 0.374 |
+| 128to256   | 0.4063 / 0.3928 / 0.2432(*) | -0.66 | +1.32 | 0.4741 | +6.00 | 0.417 |
+
+(*) haar at 128to256 is 0.2432 in the printout, identical to 64to128 — worth a second look,
+it may be a coincidence of rounding or a reused value; not used in any conclusion here.
+The dimensionless quantities DRIFT with level: the correction grows 43%, the detail variance
+87%, the kurtosis 90%. At fixed z this is expected from Sec. 6 (going one level down is like
+going forward in time, h_l/r_NL changes), and it quantifies how much work the style scalar
+s_l has to do for weight sharing. It is not evidence against weight sharing by itself.
+
+### Seed scatter, 64->128, all 16 sets (scratchpad snippet, no script change)
+
+rms(eps)/h_c: cube mean 0.2743 std 0.0019 (**0.7%**), sphere 0.2836 / 0.0019 (0.7%),
+haar 0.2429 / 0.0020; multistream frac 0.375 +- 0.001; k where Wiener T = 0.5:
+1.075 +- 0.015 k_Ny,c. set2 is representative.
+Note the contrast with the ~3x scatter flagged in REPORT_3b: the DATA measurements are
+stable to 0.7%, so that earlier scatter was training/optimisation variance, not data variance.
+Also note haar has the SMALLEST rms(eps) on real z=0 data (0.2429 vs cube 0.2743) — opposite
+to the de-aliased 2LPT self-test. This does not overturn the "no Haar" convention: the notes
+reject Haar because it injects a *random* aliasing component into the correction at linear
+order (forcing the correction head to be generative), which rms(eps) does not measure. Here
+the discreteness floor dominates and hides Haar's low-k mismatch (its slope is still the
+worst, -0.27 vs -0.16).
+
+### Sphere alpha sweep — run, then discarded as the wrong metric
+
+alpha 0.6/0.7/0.8/0.9/1.0 gives rms(eps)/h_c = 0.3822/0.3438/0.3168/0.2968/0.2836.
+Monotonic, but this does NOT answer "should the unreliable coarse modes near k_Ny,c be
+discarded and regenerated": with alpha < 1 the coarse field's own power outside the sphere
+is deliberately dropped and lands entirely inside eps, so the metric charges the method for
+something it did on purpose. Recorded so it is not repeated.
+The question is better answered by the coarse-vs-fine correlation, which is already measured:
+r(coarse, R fine) = 0.985 at 0.41 k_Ny,c, 0.938 at 0.59, 0.804 at 0.81, 0.678 at 0.94. The
+coarse modes near Nyquist are still strongly informative, not noise, so re-sampling them from
+the prior (what the sphere does) discards real information — consistent with review point 4
+and with the cube being the default. A real test needs a trained model, i.e. the ICs.
