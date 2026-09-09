@@ -712,3 +712,73 @@ table above is the `--regression` evaluation. **Any `--eval-only` of a regressio
 must pass `--regression`.**
 
 runs/REPORT_5.md written.
+
+## 2026-09-09 10:20 — why generative mode loses power: the sampler cannot make a transverse octave
+
+Diagnostic asked for after REPORT_5 flagged the generative power deficit (flow 0.81,
+regression 0.65, against 1.02/1.00 on the 2LPT toy) as the largest toy-to-real discrepancy.
+
+### Mixing scan: eta = sqrt(1-a) eta_true + sqrt(a) eta_sample
+
+Built by hand from the R1/R2 checkpoints (no script change), 2 noise realisations per point,
+octave-band k-integrated ratios on the test box:
+
+| a | source P/P | source r | flow P/P | flow r | reg P/P | reg r |
+|---|-----------|----------|----------|--------|---------|-------|
+| 0.00 | 1.5804 | 0.4740 | 0.9674 | 0.6456 | 0.5972 | 0.7621 |
+| 0.25 | 1.5202 | 0.4202 | 0.9147 | 0.5917 | 0.5914 | 0.6837 |
+| 0.50 | 1.4549 | 0.3517 | 0.8597 | 0.5222 | 0.5835 | 0.5913 |
+| 0.75 | 1.3876 | 0.2559 | 0.8031 | 0.4228 | 0.5744 | 0.4713 |
+| 1.00 | 1.3152 | 0.0035 | 0.7401 | 0.1506 | 0.5597 | 0.1841 |
+
+Smooth and monotonic — **no off-manifold cliff**, so the review's "the learned velocity is
+constrained only on the support of p_t" is not what is happening here. The decomposition is:
+
+* **The regression's power deficit has nothing to do with generative mode.** It is 0.597 with
+  the TRUE octave and 0.560 with a fully sampled one. It is the conditional mean being smooth,
+  present in emulator mode already.
+* **The flow's power is nearly right with the true octave (0.967) and falls to 0.740.** Of that
+  23-point drop, **17 points are the source itself** and only ~6 come from losing the
+  octave-truth correlation.
+
+### The source prior is 17% low in power, and the reason is structural
+
+The sampled octave has 0.829-0.833 of the true octave's variance, consistent across
+realisations. Cause:
+
+| field | longitudinal (curl-free) fraction |
+|-------|-----------------------------------|
+| IC displacement, all bands (z=99) | 0.9951 |
+| IC displacement, coarse band | 0.9997 |
+| **IC displacement, octave band** | **0.8281** |
+| z=0 displacement, all bands | 0.9868 |
+| **z=0 displacement, octave band** | **0.6922** |
+
+`sample_linear_octave` builds `Psi = i k delta / k^2`, which is **purely longitudinal by
+construction** (its docstring says "curl-free"). The true IC octave on this grid is only 82.8%
+longitudinal, and 0.828 is exactly the measured power ratio 0.820-0.833. The sampler is not
+mis-normalised; it structurally cannot produce the missing component.
+
+The transverse part is concentrated entirely in the octave band (the coarse band is 99.97%
+longitudinal) and grows with k (P_sampled/P_true = 0.92 at k_Ny,c falling to 0.83 at
+1.88 k_Ny,c). That is the signature of **particle-lattice aliasing**, not physical vorticity:
+the octave band reaches |k| = sqrt(3) k_Ny,f in the corners of the fine cube, and a displacement
+parallel to the un-aliased k is not parallel to the aliased k. It is already 17% at z = 99,
+where the flow is exactly potential, which rules out multi-streaming as the cause there; by
+z = 0 it is 31%, where genuine multi-stream vorticity adds to it.
+
+**This sharpens point 5 of the external review.** The review objected that the source is
+degenerate (rank-one, longitudinal); the response was that the transverse components of the
+true detail are functions of eta rather than extra randomness. On this data the *initial
+condition octave itself*, as represented on the grid, is 17% transverse — so the sampled source
+does not span the target's support at the level of the initial conditions, not merely at the
+level of the detail.
+
+### Not changed, needs a decision
+
+Fixing this means changing the source distribution, which CLAUDE.md requires asking about.
+Options: (a) sample the octave displacement directly from its measured per-component vector
+power instead of going through delta — matches the power, drops the curl-free structure;
+(b) keep the longitudinal part as now and add a transverse component with its measured
+spectrum; (c) leave it and quote the 17% as a known floor on generative power.
+Note that emulator mode is unaffected: it uses the true octave, transverse part included.
