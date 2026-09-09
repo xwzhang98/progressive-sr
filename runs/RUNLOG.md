@@ -650,3 +650,16 @@ Consequence for Stage 5: its premise is that the flow's advantage should be loca
 multi-stream patches. If the non-Gaussianity of the detail is not localised there, that premise
 is weaker than stated. The decisive measurement is still the direct one — the multi/single
 split of the rms error in R1-R4, which the updated script prints on every evaluation line.
+
+### Wiener source path verified on CPU before spending GPU time (20-step smoke test)
+
+`--source-filter wiener`, self-run 32->64, growth 76.7439. Fitted filters, printed at start-up:
+
+    Tc(k/kNy,c) = 0.25:1.000  0.50:1.018  0.75:0.886  0.95:0.677
+    G (k/kNy,c) = 1.05:0.703  1.30:0.494  1.60:0.382  1.90:0.329
+
+Both match KICKOFF_STAGE5.md's stated expectations (Tc ~1 below 0.5 k_Ny,c falling to ~0.7 at
+0.95; G ~0.4-0.6 across the octave, measured 0.33-0.70). And the predicted baseline change is
+confirmed exactly: octave-band `P/P_true` = **0.331** against `r^2` = 0.555^2 = **0.308** (it
+was 1.486 with the raw linear octave), and rms/h_f drops 0.577 -> 0.465. The filtered source
+therefore sits on the `P/P = r^2` line, which is where the best linear prediction belongs.
