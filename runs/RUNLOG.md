@@ -616,3 +616,37 @@ Note also that the mask separates variance only weakly: var_in/var_out is 1.34 (
 1.33 (production). Binning by the coarse delta_L does more (variance rises by 2x from the most
 underdense to the densest bin) but leaves the kurtosis flat at 1.1-1.3 (self-run) / 2.4-4.5
 (production), so conditioning on the local jet does not Gaussianise the detail on real data.
+
+### Panel (c) follow-up: the coarse-mask hypothesis is REFUTED
+
+Rebuilt the multi-stream mask from the FINE field (`det(I + D_f) < 0`) instead of the coarse
+one, to test the hypothesis logged above:
+
+| dataset | coarse-mask frac | fine-mask frac | fine-mask cells the coarse mask misses |
+|---------|-----------------|----------------|----------------------------------------|
+| self-run 32->64 | 0.293 | 0.369 | 62% |
+| production 64->128 | 0.374 | 0.417 | 56% |
+
+| dataset | mask | var in / out | kurt in / out |
+|---------|------|--------------|---------------|
+| self-run | coarse | 0.1717 / 0.1284 | +1.30 / +1.37 |
+| self-run | fine | 0.1643 / 0.1275 | +1.22 / +1.48 |
+| production | coarse | 0.3007 / 0.2253 | +2.68 / +3.43 |
+| production | fine | 0.2856 / 0.2305 | +2.77 / +3.45 |
+
+The first half of the hypothesis holds — the coarse mask does miss 56-62% of the cells that
+are multi-stream at the fine level — but the conclusion does not follow: with the fine mask
+the kurtosis is still LOWER inside than outside, and for the self-run pair the gap widens
+(1.22 vs 1.48). So "the detail is less heavy-tailed inside multi-stream regions" is a robust
+property of both datasets under either mask, not an artefact of using the coarse field.
+
+Reading (interpretation, not proof): excess kurtosis is normalised by the variance squared.
+Inside the patches the distribution is already broad, so the same outliers are not heavy tails
+relative to its own width; outside, a quiet background with occasional large |d| looks very
+heavy-tailed. Both masks separate the variance by only ~1.3x while the tails are relatively
+heavier outside.
+
+Consequence for Stage 5: its premise is that the flow's advantage should be localised in the
+multi-stream patches. If the non-Gaussianity of the detail is not localised there, that premise
+is weaker than stated. The decisive measurement is still the direct one — the multi/single
+split of the rms error in R1-R4, which the updated script prints on every evaluation line.
