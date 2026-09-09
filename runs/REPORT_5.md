@@ -223,3 +223,56 @@ kurtosis 4.50 -> 2.42 -> 2.75. In both datasets the variance responds strongly t
 local jet does not Gaussianise the detail — the "close to Gaussian outside the multi-stream
 patches" criterion of KICKOFF_STAGE5 fails on the production pair (kurtosis 3.43 outside) and
 is only marginal on the self-run pair (1.37).
+
+---
+
+## Addendum 2: question (b) answered, and the chi' experiment pre-checked and dropped
+
+### The chi' suggestion is not worth a training run
+
+Notes v3 suggests feeding the whole fine initial condition instead of its octave, so that the
+non-nestedness residual `chi' = W delta_f - delta_c` stops being unknown. Measured before
+spending GPU time on it, on the test box:
+
+| | rms | r(model error, chi') | P_chi / P_err |
+|---|---|---|---|
+| chi' as a displacement | 0.380 h_f | — | — |
+| R1 flow, coarse-band error | 0.262 h_f | **-0.170** | 1.13 |
+| R2 regression, coarse-band error | 0.196 h_f | **-0.184** | 2.06 |
+
+`chi'` is large — bigger than the residual error itself — but the error is almost orthogonal to
+it, so a linear fit to `chi'` would remove only `r^2 ≈ 3%` of the error variance. If the models
+were failing because they cannot see `chi'`, the correlation would be near ±1. **Dropped.**
+(The sign is mildly interesting: the error is *anti*-correlated with `chi'`, i.e. the models
+over-correct in that direction rather than under-correct.)
+
+### (b) revisited: the power deficit IS deeper in the multi-stream patches, but not confined to them
+
+The body of this report said question (b) was untested because a masked power spectrum was not
+available. A masked *spectrum* is in fact the wrong tool — a 29%-filling mask convolves the
+spectrum badly. The k-integrated version is well defined in real space with no convolution:
+the octave-band variance ratio of prediction to truth, evaluated inside and outside the coarse
+multi-stream mask.
+
+| model | `P/P` all | `P/P` multi | `P/P` single | `r` all | `r` multi | `r` single |
+|-------|-----------|-------------|--------------|---------|-----------|-----------|
+| flow | 0.9674 | 0.9412 | 0.9821 | 0.6456 | 0.5715 | 0.6862 |
+| regression | 0.5972 | **0.5125** | **0.6445** | 0.7621 | 0.7026 | 0.7934 |
+
+(These are k-integrated over the octave band and so weight high k more heavily than the
+shell-averaged `P/P_true` of the main table; the ordering is the same.)
+
+**The weak form of the notes' claim holds:** the regression's power deficit `1 - P/P` is 0.487
+inside the multi-stream patches against 0.355 outside — 37% deeper inside. The flow's deficit
+is small in both (0.059 / 0.018).
+
+**The strong form fails:** notes v3 says twice that "the single-stream fraction is where
+regression and flow should coincide". In the single-stream part the flow is at 0.982 and the
+regression at 0.645 — a 36% power deficit in the region where the two were predicted to agree.
+
+**And the deficit tracks difficulty, not stream count.** The regression's multi/single ratio is
+1.37 for the power deficit and 1.35 for the rms error — the same factor. That is what one
+expects if the multi-stream mask is a proxy for "how hard this patch is" rather than the seat of
+a distinct mechanism. It weakens the case for splitting the model by a multi-stream mask
+(the regression-in-single-stream / generative-in-multi-stream division of Sec. 10): on this data
+the objective matters everywhere, not only where the flow has crossed.
