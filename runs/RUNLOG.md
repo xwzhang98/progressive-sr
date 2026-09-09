@@ -782,3 +782,52 @@ power instead of going through delta — matches the power, drops the curl-free 
 (b) keep the longitudinal part as now and add a transverse component with its measured
 spectrum; (c) leave it and quote the 17% as a known floor on generative power.
 Note that emulator mode is unaffected: it uses the true octave, transverse part included.
+
+## 2026-09-09 13:10 — the 64->128 self-run set is built; Phase 0 on it; 128^3 training cost
+
+`sims/run_selfsim_128.sh 10` added the 128^3 level to all ten seeds (09:39-13:10, ~21 min per
+seed), so `data/selfsim/s{n}/` now holds 32/64/128 cubes and their ICs from one realisation.
+
+### Phase 0, self-run 64->128, z=0, offset 0, growth 76.7439
+
+`python phase0_octaves.py --levels 64 128 --box 100000 --dis "data/selfsim/s0/dis_{N}.npy" --ic "data/selfsim/s0/ic_dis_{N}.npy" --offset 0 --growth 76.7439 --out runs/selfsim_64to128`
+
+rms(eps)/h_c: sphere 0.2757, cube 0.2654, haar 0.3936; slopes -0.19 / +1.73 (spectral).
+var(d/h_f) = 0.2420, kurt +2.80, multistream 0.369. Harmonics still uncorrelated
+(r = -0.018) as at 32->64. IC nestedness 8.57e-02 (the shared-white-noise level, as expected).
+
+### Level-to-level drift at fixed z (the weight-sharing question)
+
+| | 32->64 | 64->128 | drift |
+|---|--------|---------|-------|
+| rms(eps)/h_c cube | 0.1898 | 0.2654 | +40% |
+| var(d/h_f) | 0.1410 | 0.2420 | +72% |
+| excess kurtosis | 1.42 | 2.80 | +97% |
+| multistream frac | 0.291 | 0.369 | +27% |
+
+Same pattern and similar size as the production series (64->128 -> 128->256). This is NOT
+evidence against self-similarity: Sec. 6 says a level down at fixed z is a step forward in
+time, so the drift is expected and is exactly what s_l must absorb. The real test is a
+matched-sigma comparison; for n_eff ~ -2, halving h multiplies sigma by sqrt(2), so the
+64->128 pair should be compared with 32->64 at z=0 when D(z)/D(0) = 1/sqrt(2), i.e. z ~ 0.45.
+That needs one more 128^3 run with extra outputs (~28 min); not done yet.
+
+Haar at the matched 64->128 transition, self-run: cube 0.2654 vs haar 0.3936 (cube wins), where
+the production 64->128 has cube 0.2745 vs haar 0.2432 (haar wins). The flip survives.
+
+### 128^3 training cost: batch 2 thrashes, batch 1 does not
+
+| config | s/step |
+|--------|--------|
+| batch 2, base 24 | **127** (vm_stat showed 75 MB free: unified-memory thrashing, invisible in RSS) |
+| batch 1, base 24 | **7.55** |
+
+So 1500 steps is 53 h at batch 2 and 3.1 h at batch 1. Running at **batch 1**, which is the one
+setting that differs from the 32->64 runs and must be quoted with any cross-level comparison.
+Patch cropping (which CLAUDE.md requires asking about) is NOT needed at this size.
+Baseline at 64->128 is much harder than at 32->64: octave r = 0.394 (against 0.555),
+P/P_true = 1.292, rms 0.816 h_f (multi/single 0.896/0.764).
+
+`runs/selfsim128_train.sh` launched: F1 flow + F2 regression, 1500 steps each, ~6.3 h total,
+`--octave-sampler full` so the in-run generative lines use the corrected octave (training is
+physical-coupling, so the sampler never enters it).
