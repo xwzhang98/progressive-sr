@@ -127,6 +127,21 @@ class Scaffold:
         Pm = np.interp(g.kmag.ravel(), g.kshell, P).reshape(g.kmag.shape)
         A = np.sqrt(np.maximum(Pm, 0) / ((g.L / g.N**2) ** 3 * g.N**3))
         self.A_delta = torch.from_numpy(A.astype(np.float32)).to(self.fdev)
+        # Transverse shell power of the SAME octave.  Psi = i k delta / k^2 is curl-free, but the
+        # IC octave on a particle lattice is not: 17% of its variance is transverse at z=99 on the
+        # self-run 32/64 set, all of it above ~0.75 k_Ny,f, i.e. lattice aliasing of a potential
+        # flow rather than vorticity.  Sampling only the longitudinal part therefore produces an
+        # octave 17% low in power.  Fitted here, used only by sample_linear_octave(transverse=True).
+        W = self.W.cpu().numpy()
+        ks = (g.kx, g.ky, g.kz)
+        k2 = np.maximum(g.kmag**2, 1e-30)
+        acc_t = np.zeros(g.nshell)
+        for ic in ic_list:
+            F = p0.rfftn(ic.astype(np.float32)) * (1 - W)
+            kd = ks[0] * F[0] + ks[1] * F[1] + ks[2] * F[2]
+            FT = F - np.stack([k * kd / k2 for k in ks])
+            acc_t += g.shell_avg((np.abs(FT) ** 2).sum(0))
+        self.P_trans = acc_t / len(ic_list)
 
     def fit_source_filters(self, train, growth=1.0):
         """Data-driven linear source (the best linear prediction of Psi_f, mode by mode):
@@ -175,12 +190,32 @@ class Scaffold:
         Fx = torch.fft.rfftn(x, dim=(-3, -2, -1)) * (self.Tc if which == "low" else self.G)
         return torch.fft.irfftn(Fx, s=x.shape[-3:], dim=(-3, -2, -1)).to(self.device)
 
-    def sample_linear_octave(self, B, gen=None):
-        """Gaussian linear displacement restricted to the octave band, curl-free: Psi = i k delta / k^2."""
+    def sample_linear_octave(self, B, gen=None, transverse=False):
+        """Gaussian linear displacement restricted to the octave band.
+
+        Longitudinal part (always): curl-free, Psi = i k delta / k^2.
+        transverse=True adds a Gaussian transverse field with the measured shell power
+        `P_trans`, which restores the ~17% of the octave variance that a curl-free sampler
+        cannot produce (see fit_linear_power).  Off by default so earlier runs reproduce.
+        """
         w = torch.randn((B, self.Nf, self.Nf, self.Nf), generator=gen, device=self.fdev)
         Fw = torch.fft.rfftn(w, dim=(-3, -2, -1)) * self.A_delta * (1 - self.W)
         comps = [torch.fft.irfftn(1j * self.k[i] * Fw / self.k2, s=(self.Nf,) * 3, dim=(-3, -2, -1)) for i in range(3)]
-        return torch.stack(comps, dim=1).to(self.device)
+        out = torch.stack(comps, dim=1)
+        if transverse:
+            g = self.gf
+            wv = torch.randn((B, 3, self.Nf, self.Nf, self.Nf), generator=gen, device=self.fdev)
+            Fv = torch.fft.rfftn(wv, dim=(-3, -2, -1)) * (1 - self.W)
+            kd = sum(self.k[i] * Fv[:, i] for i in range(3))
+            Ft = torch.stack([Fv[:, i] - self.k[i] * kd / self.k2 for i in range(3)], dim=1)
+            # rescale shell by shell so the transverse power matches the measured P_trans
+            Pw = g.shell_avg((Ft[0].abs() ** 2).sum(0).cpu().numpy())
+            s = np.sqrt(np.divide(self.P_trans, np.maximum(Pw, 1e-30),
+                                  out=np.zeros_like(self.P_trans), where=Pw > 0))
+            S = torch.from_numpy(np.interp(g.kmag.ravel(), g.kshell, s)
+                                 .reshape(g.kmag.shape).astype(np.float32)).to(self.fdev)
+            out = out + torch.fft.irfftn(Ft * S, s=(self.Nf,) * 3, dim=(-3, -2, -1))
+        return out.to(self.device)
 
 
 # ----------------------------------------------------------------------------
@@ -297,8 +332,10 @@ def load_real(dis_pat, ic_pat, Nc, Nf, seeds):
 class Batcher:
     """Builds (x0, x1, cond) on the device from raw numpy fields, with augmentation."""
 
-    def __init__(self, sc, data, rng, augment_on=True, growth=1.0, coupling="physical", source_filter="none"):
+    def __init__(self, sc, data, rng, augment_on=True, growth=1.0, coupling="physical", source_filter="none",
+                 octave_transverse=False):
         self.sc, self.data, self.rng, self.aug, self.growth = sc, data, rng, augment_on, growth
+        self.octave_transverse = octave_transverse
         self.coupling = coupling   # physical: x0 uses the true IC octave of x1; independent: a fresh sample
         self.source_filter = source_filter
 
@@ -316,7 +353,7 @@ class Batcher:
             # Applying it twice made the sampled octave growth^2 = 5890x too powerful at
             # growth = 76.7 (generative P/P_true = 7397 on the first real-data run); it was
             # invisible on the 2LPT toy because every toy run uses the default growth = 1.
-            lin = sc.sample_linear_octave(dc.shape[0], gen)
+            lin = sc.sample_linear_octave(dc.shape[0], gen, transverse=self.octave_transverse)
         if self.source_filter == "wiener":
             Pc_src, lin = sc.apply_filter(Pc, "low"), sc.apply_filter(lin, "high")
         else:
@@ -445,6 +482,10 @@ def main():
     ap.add_argument("--coupling", type=str, default="physical", choices=["physical", "independent"],
                     help="training coupling: physical (x0 built from the true octave of x1) or independent "
                          "(x0 built from a fresh sampled octave; same marginals, uninformative source)")
+    ap.add_argument("--octave-sampler", type=str, default="longitudinal", choices=["longitudinal", "full"],
+                    help="sampled octave: curl-free only (default, reproduces earlier runs) or "
+                         "plus the measured transverse component, which the lattice makes ~17% of the "
+                         "octave variance on real data (generative mode only; emulator mode is unaffected)")
     ap.add_argument("--regression", action="store_true",
                     help="direct one-step regression baseline: same network and inputs, trained at t=0 only "
                          "(predict x1 - x0 from x0), evaluated with a single Euler step")
@@ -480,7 +521,7 @@ def main():
     sc.fit_linear_power([it["ic_f"] * args.growth for it in train])
     if args.source_filter == "wiener":
         sc.fit_source_filters(train, growth=args.growth)
-    batcher = Batcher(sc, train, rng, augment_on=not args.no_augment, growth=args.growth, coupling=args.coupling,
+    batcher = Batcher(sc, train, rng, augment_on=not args.no_augment, growth=args.growth, coupling=args.coupling, octave_transverse=(args.octave_sampler == "full"),
                       source_filter=args.source_filter)
     print(f"training coupling: {args.coupling}" + ("  (regression baseline, t=0 only)" if args.regression else ""))
     s_level = torch.zeros(args.batch, device=dev)  # scale/style scalar: constant for a single transition
