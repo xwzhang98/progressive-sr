@@ -221,3 +221,76 @@ uncertainty; repeat seeds are the first item for the next round.
   -> runs/fig_spectra_cube.png, runs/fig_slices_cube.png
 - runs/A_r2_plane.png (the four A models in the (r, P/P) plane, made by a scratchpad script)
 - runs/REPORT_3b.md written.
+
+## 2026-09-09 01:00 — Stage 4: real snapshots from CMU Box
+
+Owner supplied https://cmu.box.com/s/j2tkysa3a5iejzua991o2up5sy2ah2gs. The shared link is
+public (no SSO needed for the download endpoint), so the files were fetched directly:
+`curl -L "https://cmu.app.box.com/index.php?rm=box_download_shared_file&shared_name=<KEY>&file_id=f_<ID>"`.
+Contents of the `sr_training_data` folder: dmo-64.tar.gz 177 MB, dmo-128.tar.gz 1.4 GB,
+dmo-256.tar.gz 11.0 GB, dmo-512.tar.gz.part-aa/ab 46+43 GB, state_710.pt 165 MB.
+Downloaded 64 and 128; 256 in progress; **512 not downloaded (owner's instruction)**.
+Everything lands in `data/`, which was added to .gitignore BEFORE the first download.
+
+Format: already map2map-style, no `hpc/convert_snapshot.py` needed. Each tarball is
+`dmo-<N>/set{0..15}/PART_009/{disp,vel,cat,style}.npy`; 16 nested seeds per level, one
+snapshot. `disp.npy` is float32 (3,N,N,N), `cat.npy` = concat(disp, vel), `style.npy` = [1.].
+**Units are kpc/h, not Mpc/h**: disp rms per component 4519 (64) / 4537 (128), i.e. 4.5 Mpc/h
+in a 100 Mpc/h box. All runs therefore use `--box 100000`, which keeps every dimensionless
+quantity correct (k comes out in h/kpc; panel (a)'s y-axis label still says (Mpc/h)^3 — a
+cosmetic mislabel, the script was not changed for it).
+
+### Grid convention (the offset probe, done without ICs)
+
+There are no IC snapshots in the tarballs, so the usual nestedness check is unavailable.
+Substitute: the correct offset is the one minimising |R Psi_f - Psi_c|.
+`python phase0_octaves.py --levels 64 128 --box 100000 --dis "data/dmo-{N}/set2/PART_009/disp.npy" --offset {0,0.5} --out runs/real_probe_off{0,0.5}`
+
+| offset | rms(eps)/h_c sphere | cube | haar |
+|--------|--------------------|------|------|
+| 0      | 0.4204 | 0.4231 | 0.2432 |
+| 0.5    | 0.2836 | 0.2745 | 0.2432 |
+
+=> **offset 0.5**. Haar is offset-independent (real-space block average), as expected, and
+its value is identical in both runs, which is a useful internal consistency check.
+Nestedness confirmed independently: r(coarse, R fine) = 1.00000 at k = 0.04 k_Ny,c and
+Wiener r = 0.99999 at low k, so set2 at 64 and at 128 really are the same seed.
+
+### Phase 0 on the real 64/128 pair (set2, offset 0.5)
+
+`python phase0_octaves.py --levels 64 128 --box 100000 --dis "data/dmo-{N}/set2/PART_009/disp.npy" --vel "data/dmo-{N}/set2/PART_009/vel.npy" --offset 0.5 --out runs/real_64to128_set2`
+
+- correction: rms(eps)/h_c = 0.2836 sphere / 0.2745 cube / 0.2432 haar (displacements);
+  0.1183 / 0.1199 / 0.1173 for the velocities.
+- **low-k slopes are NOT the ideal k^2/k^4**: P_eps = -0.16, P_div,eps = +1.70 (sphere and
+  cube alike; haar -0.27 / +1.51). Panel (a) shows P_eps essentially flat (white) across
+  0.04-1.0 k_Ny,c. This is the discreteness floor of Sec. 5's caveat, and on this real
+  64/128 pair it dominates the k^2 term completely, unlike the de-aliased 2LPT self-test
+  (+2.19 / +4.14). In absolute terms it is still ~6 decades below P_Psi at the lowest k and
+  only becomes comparable near k_Ny,c, where P_eps/P_coarse = 0.031 (0.41 k_Ny,c) -> 0.128
+  (0.59) -> 0.372 (0.81) -> 0.571 (0.94).
+- Wiener T(k) (the "best" linear R, Sec. 3.2): 1.00 to 0.25 k_Ny,c, then 0.95 at 0.50,
+  0.90 at 0.66, 0.80 at 0.94, 0.50 at 1.06 k_Ny,c.
+- conditional stats: var(d/h_f) = 0.2535 with excess kurtosis +3.16, and **multistream
+  fraction 0.374** (13x the velocity field's 0.013). The 2LPT toy has 0.000 by construction,
+  so this pair does probe the regime the notes say the toy cannot.
+- panel (b) is meaningless here: with no IC the script substitutes the fine field itself,
+  so r(d, linear octave) = 1 identically. Do not read it.
+
+### Bug fixed (plotting only, no physics)
+
+`plot_all` received the bookkeeping keys `_git_commit` / `_argv` that `main` writes into
+`results`, because the filter only excluded `*_vel`:
+`TypeError: string indices must be integers` at `r["correction"]["sphere"]`. This broke the
+figure on EVERY phase0 run made after that bookkeeping was added (the analysis and the JSON
+were fine). One-line fix, also skip keys starting with "_":
+`plot_all({k: v for k, v in results.items() if not k.endswith("_vel") and not k.startswith("_")}, args.out)`
+Verified by re-running the command above; `phase0_summary.png` is written again.
+
+### Still open
+
+- The IC-dependent diagnostics — (b) detail vs linear octave, and the coarse-only harmonics
+  of review point 1 — need IC snapshots at z_init plus D(z_out)/D(z_ic). Not in the tarballs;
+  ask the owner whether they exist.
+- Which snapshot PART_009 is (redshift) and the cosmology are not recorded anywhere in the
+  data; needed for the growth factor.

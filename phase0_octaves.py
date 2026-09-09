@@ -661,7 +661,8 @@ def main():
     results["_argv"] = sys.argv
     with open(os.path.join(args.out, "phase0_results.json"), "w") as f:
         json.dump(results, f, indent=1)
-    plot_all({k: v for k, v in results.items() if not k.endswith("_vel")}, args.out)
+    plot_all({k: v for k, v in results.items()
+              if not k.endswith("_vel") and not k.startswith("_")}, args.out)
     print(f"done in {time.time()-t0:.1f}s -> {args.out}/phase0_results.json")
 
 

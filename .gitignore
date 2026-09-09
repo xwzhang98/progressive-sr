@@ -25,3 +25,5 @@ notes/*.toc
 notes/*.fls
 notes/*.fdb_latexmk
 notes/*.synctex.gz
+# real snapshot data pulled from Box (tens of GB) -- never in git
+data/
