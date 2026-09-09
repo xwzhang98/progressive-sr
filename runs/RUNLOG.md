@@ -568,3 +568,51 @@ realisations are not independent there.
 Queue rearranged for Stage 5 (`runs/stage5_train.sh`), superseding the independent-coupling
 R3/R4 I had queued before KICKOFF_STAGE5.md landed: R3/R4 are now the `--source-filter wiener`
 runs, followed by seed repeats of R1/R2 for an error bar, then CPU re-evaluation of R1/R2.
+
+## 2026-09-09 03:10 — Haar settled at a matched transition; Phase-0 panel (c) on real data
+
+### Haar vs spectral R, same transition (64->128) and same convention
+
+Using the extra 128^3 self-run made for this (seed 181170, 28 min):
+
+| dataset | offset | sphere | cube | haar | winner | multistream |
+|---------|--------|--------|------|------|--------|-------------|
+| self-run 64->128 (corners) | 0.0 | 0.2757 | 0.2654 | 0.3936 | cube | 0.369 |
+| self-run 64->128 shifted to centres | 0.5 | 0.2733 | **0.2629** | 0.3013 | cube | 0.364 |
+| production 64->128 (centres) | 0.5 | 0.2836 | 0.2745 | **0.2432** | haar | 0.374 |
+
+So the ordering flip is neither a transition effect nor fully a convention effect: at the
+matched transition, matched convention and nearly equal multistream fraction, cube still wins
+on the self-run data and haar still wins on the production data. The spectral values agree
+between datasets to 4% (cube 0.2629 vs 0.2745); the whole difference is in Haar, which is 24%
+better on the production data. The datasets differ in IC generator settings, the converter
+that produced disp.npy, force softening, time stepping and the particle lattice, and I cannot
+isolate which tonight.
+This does NOT challenge the no-Haar convention: that rests on Haar injecting a *random*
+linear-order aliasing component into the correction (forcing a generative correction head),
+which rms(eps) does not measure. It does mean **rms(eps) comparisons are not portable between
+datasets**, and any future R comparison must be made within one dataset.
+
+### Panel (c): is the detail Gaussian given the local coarse jet?  -> `runs/fig_conditional_real.png`
+
+| dataset | multi frac | var in / out | kurt in | kurt out | global kurt |
+|---------|-----------|--------------|---------|----------|-------------|
+| self-run 32->64 z=0 | 0.293 | 0.1717 / 0.1284 | 1.30 | 1.37 | 1.42 |
+| production 64->128 z=0 | 0.374 | 0.3007 / 0.2253 | 2.68 | 3.43 | 3.16 |
+| 2LPT self-test 32->64 | 0.000 | n/a / 0.0067 | n/a | 0.05 | 0.05 |
+
+**CONTRADICTS the expectation stated in KICKOFF_STAGE5.md** ("inside them it is expected to be
+far from Gaussian"): the excess kurtosis is *lower* inside the multi-stream patches than
+outside, in both datasets (1.30 vs 1.37 and 2.68 vs 3.43). And the outside is not "close to
+Gaussian" on the production pair either (3.43, against the stated ~1 criterion); only the
+self-run pair is near it (1.37).
+
+Hypothesis, NOT verified: the mask is `det(I + D_L) < 0` evaluated on the COARSE field, so it
+misses structures already collapsed at the fine level but unresolved coarsely. Outside the
+mask the detail is then a quiet background with rare large-|d| outliers -> heavy tails; inside
+it, large |d| is typical, so the distribution is broad but not heavy-tailed relative to its own
+variance. Testable by building the mask from the fine field; not done.
+Note also that the mask separates variance only weakly: var_in/var_out is 1.34 (self-run) and
+1.33 (production). Binning by the coarse delta_L does more (variance rises by 2x from the most
+underdense to the densest bin) but leaves the kurtosis flat at 1.1-1.3 (self-run) / 2.4-4.5
+(production), so conditioning on the local jet does not Gaussianise the detail on real data.
