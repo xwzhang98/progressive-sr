@@ -183,3 +183,41 @@ The CIC deposit self-checks mass conservation (262144.0 = 64^3, <delta> = -1.1e-
   baseline's octave-band power falls from 1.0 to 0.78 of truth; emulator and generative both
   sit on 1.0; r(k) is ~1 below k_Ny,c for all, then stays ~1 for the emulator and drops to 0
   for the generative sample. To be repeated with the cube model (A1) for REPORT_3b.
+
+## 2026-09-09 00:00 — Stage 3b complete (A, B, C); see runs/REPORT_3b.md
+
+All six trainings sequential on MPS, 1.82-1.90 s/step, ~47 min each; C is eval-only.
+Cube window unless stated. Baseline (cube): r=0.9176 P/P=0.8446 eps=1.05e-02 rms=0.187.
+
+| run | emu r | emu P/P | r^2 | 1-step r | 1-step P/P | gen P/P | emu eps | gen eps | rms/h_f |
+|-----|-------|---------|-----|----------|------------|---------|---------|---------|---------|
+| A_flow_phys    | 0.9963 | 1.0090 | 0.9925 | 0.9965 | 0.9880 | 1.0182 | 1.32e-03 | 9.32e-03 | 0.055 |
+| A_reg_phys     | 0.9976 | 0.9952 | 0.9952 | 0.9976 | 0.9952 | 1.0047 | 6.12e-04 | 8.98e-03 | 0.045 |
+| A_flow_indep   | 0.9542 | 0.9656 | 0.9106 | 0.2212 | 0.0414 | 0.9735 | 1.16e-02 | 1.10e-02 | 0.146 |
+| A_reg_indep    | 0.1399 | 0.0233 | 0.0196 | 0.1399 | 0.0233 | 0.0233 | 5.03e-03 | 5.03e-03 | 0.383 |
+| B_flow_sphere  | 0.9948 | 1.0341 | 0.9897 | 0.9939 | 1.0419 | 1.0393 | 7.95e-03 | 1.58e-02 | 0.083 |
+| B_reg_sphere   | 0.9979 | 0.9957 | 0.9958 | 0.9979 | 0.9957 | 0.9944 | 1.24e-03 | 1.76e-02 | 0.047 |
+
+C (sampler steps on A_flow_phys): N=1 r=0.9965 P/P=0.9880 eps=1.58e-03 | N=2 0.9970 1.0005
+1.38e-03 | N=4 0.9964 1.0058 1.32e-03 | N=8 0.9963 1.0090 1.32e-03 | N=16 0.9962 1.0100
+1.32e-03. Saturated by N=2; P/P drifts away from 1 as steps are added.
+
+Expectations from KICKOFF_STAGE3B: (2), (3), (4) all held, including the collapse of the
+independent-coupling regression (r=0.14 on the r^2 line) and of the independent flow's
+one-step evaluation (r=0.22, P/P=0.041). Regression + physical coupling BEATS the flow on
+this toy (r 0.9976 vs 0.9963, rms 0.045 vs 0.055 h_f). Cube beats sphere on the generative
+coarse-band eps_rel (1.7-2.0x) and on the window-independent rms.
+DEVIATION: (2) was expected off the r^2 line but sits on it to 4 decimals; P/P=r^2 is the
+locus of any MSE-optimal predictor (the no-network baseline is on it too) and the two lines
+merge as r->1, so the diagnostic only discriminates at low r. Argued in REPORT_3b.md, not
+explained away.
+CAVEAT: B_flow_sphere (new script) gives emu eps 7.95e-03 / rms 0.083 where the pre-review
+runs/toy32_main gave 2.55e-03 / 0.059 for the nominally identical configuration; baselines
+agree to 4 decimals so the data path is unchanged. Single runs per configuration cannot
+separate a different random draw from a real effect => eps_rel carries ~3x run-to-run
+uncertainty; repeat seeds are the first item for the next round.
+
+- `python runs/make_figures.py --ckpt runs/A_flow_phys/model_ema.pt --window cube --tag cube`
+  -> runs/fig_spectra_cube.png, runs/fig_slices_cube.png
+- runs/A_r2_plane.png (the four A models in the (r, P/P) plane, made by a scratchpad script)
+- runs/REPORT_3b.md written.
