@@ -121,6 +121,56 @@ Caveat: this is one test box, one CIC deposit, no window deconvolution, no shot-
 subtraction. The ratios between models are meaningful because all fields go through identical
 processing; the absolute numbers are not.
 
+### 4b. Sharpened: the two power orderings are inverted, and NO model has correct Eulerian power
+
+The owner pointed out that in the density-spectrum figure none of the ratios is 1. That is
+right, and it is a stronger statement than section 4 made. Eulerian density `P_delta/P_true`,
+with `k_Ny,c` = 2.01 h/Mpc:
+
+| k [h/Mpc] | coarse | baseline | regression | flow | flow, generative |
+|---|---|---|---|---|---|
+| 0.5 | 0.997 | 0.951 | 1.096 | 1.016 | 1.055 |
+| 1.0 | 0.960 | 0.797 | 1.366 | 1.005 | 1.157 |
+| 1.5 | 0.825 | 0.543 | 1.650 | 0.883 | 1.169 |
+| **2.0** | 0.677 | 0.323 | **1.919** | **0.714** | 1.109 |
+| 3.0 | 0.437 | 0.085 | 2.294 | 0.411 | 0.892 |
+| 4.0 | 0.255 | 0.021 | 2.571 | 0.223 | 0.681 |
+
+Against the Lagrangian octave-band values, the ordering is **inverted**:
+
+| | Lagrangian octave `P/P` | Eulerian density `P/P` at `k_Ny,c` |
+|---|---|---|
+| baseline | **1.292** (excess) | **0.323** (severe deficit) |
+| flow | **1.070** (correct) | **0.714** (deficit) |
+| regression | **0.539** (deficit) | **1.919** (severe excess) |
+
+The line that matters most is the flow's. Its Lagrangian octave power is right to 7%, and yet
+its Eulerian density power **tracks the coarse field almost exactly** — 0.714 against the
+coarse run's 0.677 at `k_Ny,c`, and *below* it by 3 h/Mpc (0.411 against 0.437). Adding the
+right amount of Lagrangian octave power added essentially no Eulerian small-scale density
+power. The reason is that Eulerian density at high k depends on the phases — structures in the
+right place, caustics formed at the right Lagrangian positions — not only on the variance of
+the displacement. At `r` = 0.55 half of what the flow adds is uncorrelated, and uncorrelated
+displacement does not sharpen structure.
+
+The baseline is the same effect in its extreme form: its Lagrangian octave power is 29% *too
+high* and its Eulerian density power is 0.32, i.e. adding a random linear octave on top of the
+coarse field **smears the structure the coarse run already had** rather than creating any.
+
+Two corrections to how this project has been reporting results follow:
+
+1. **"The flow has the right power" must always be qualified as "in the Lagrangian octave
+   band".** In the Eulerian density, which is what the science depends on, no model here is
+   close to 1: the flow is 0.71 and the regression 1.92 at `k_Ny,c`.
+2. **The generative flow has the best Eulerian power of the three** (1.109 at `k_Ny,c`, 0.892
+   at 3 h/Mpc) precisely because its octave is a full-amplitude random field rather than a
+   partially-correct one — it builds structure, just not in the right place. Emulator mode with
+   `r` = 0.55 is itself behaving like a partial conditional mean in Eulerian terms.
+
+This does not change the flow-versus-regression comparison of section 2, which is internally
+consistent; it changes what any of those numbers is evidence *for*. An Eulerian metric in the
+training loop is now the clearest next step rather than a refinement.
+
 ## 5. Where this leaves the method
 
 The case for the flow is now specific rather than general: it is the only one of the two that

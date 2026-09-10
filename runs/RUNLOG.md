@@ -1030,3 +1030,26 @@ ratios are meaningful, absolute numbers are not.
 Also added: `runs/make_figures.py` now takes `--dis/--ic/--growth/--regression` for real data
 (it was synthetic-only); `runs/fig_128_density.png` (density slices, full slab and zoom) and
 `runs/fig_128_density_spectra.png` (Eulerian density spectrum, ratio, r_delta) written.
+
+## 2026-09-10 09:40 — the two power orderings are inverted (owner's observation, quantified)
+
+Eulerian density P_delta/P_true at k_Ny,c = 2.01 h/Mpc: coarse 0.677, baseline 0.323,
+regression 1.919, flow 0.714, flow-generative 1.109. At 4 h/Mpc: 0.255 / 0.021 / 2.571 /
+0.223 / 0.681.
+
+Against the Lagrangian octave band the ordering INVERTS: baseline 1.292 -> 0.323,
+flow 1.070 -> 0.714, regression 0.539 -> 1.919.
+
+The flow's Eulerian density power tracks the COARSE FIELD (0.714 vs 0.677 at k_Ny,c, and below
+it at 3 h/Mpc: 0.411 vs 0.437), so getting the Lagrangian octave power right added essentially
+no Eulerian small-scale power. Eulerian high-k density needs the phases — caustics at the right
+Lagrangian positions — and at r = 0.55 half of what the flow adds is uncorrelated. The baseline
+is the extreme case: octave power 29% too HIGH, Eulerian density power 0.32, i.e. a random
+linear octave smears the structure the coarse run already had.
+
+Consequences recorded in REPORT_6 section 4b:
+- "the flow has the right power" must always be qualified as "in the Lagrangian octave band";
+  in the Eulerian density no model here is near 1;
+- the GENERATIVE flow has the best Eulerian power of the three (1.109 at k_Ny,c) because its
+  octave is full-amplitude, even though its r vs truth is ~0;
+- an Eulerian metric in the training loop moves from "refinement" to "clearest next step".
