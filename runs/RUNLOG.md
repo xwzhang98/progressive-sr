@@ -1053,3 +1053,43 @@ Consequences recorded in REPORT_6 section 4b:
 - the GENERATIVE flow has the best Eulerian power of the three (1.109 at k_Ny,c) because its
   octave is full-amplitude, even though its r vs truth is ~0;
 - an Eulerian metric in the training loop moves from "refinement" to "clearest next step".
+
+## 2026-09-10 10:00 — the Eulerian failure is general; added an optional CIC loss term
+
+### The 32->64 pair shows the same inversion, and it worsens with resolution
+
+Eulerian density P_delta/P_true, 32->64, 3000-step models (k_Ny,c = 1.01 h/Mpc):
+
+| k/k_Ny,c | 0.75 | 1.00 | 1.5 | 2.0 |
+|----------|------|------|-----|-----|
+| coarse | 0.852 | 0.747 | 0.511 | 0.343 |
+| baseline | 0.638 | 0.452 | 0.170 | 0.061 |
+| regression | 1.253 | **1.435** | 1.866 | 2.170 |
+| flow | 0.997 | **0.963** | 0.777 | 0.551 |
+
+Density tail: regression max 2000 vs truth 1234 (+62%), mass above delta=100 0.0616 vs 0.0524
+(+18%); flow max 1108 (-10%), 0.0401 (-23%). Mass above delta=10: regression 0.2968 against
+truth 0.2972, flow 0.2748.
+
+So the pattern is not specific to 64->128, and the flow's Eulerian deficit **worsens with
+resolution**: at k_Ny,c it is 0.963 (32->64) and 0.714 (64->128), tracking r falling 0.73 -> 0.55.
+
+### `--cic-weight`: an Eulerian term in the loss (owner approved; halo mass function explicitly not)
+
+Added `cic_density()` (differentiable CIC deposit of q + Psi, mean 1) and `cic_loss()` (MSE on
+log(1+delta)); the training loop adds `cic_weight * cic_loss(x1_pred, x1)` with
+`x1_pred = x_t + (1-t) v`, which is the velocity's own prediction of the endpoint and works for
+the regression parameterisation too. Default 0, so nothing changes unless asked.
+
+Verified rather than assumed:
+- torch CIC vs the numpy one in make_figures.py: max |diff| 4.5e-06, mass exactly N^3, mean 1;
+- gradients finite and non-zero; identical inputs give exactly 0;
+- the default path is bit-identical (16->32 20-step smoke test still gives loss 3.0888e-02 and
+  baseline r=0.915 / P/P=0.835);
+- runs on MPS (scatter_add is supported): 2.11 s/step against 1.83 without, i.e. +15%.
+
+lambda calibrated against the two terms at 32->64 convergence (flow term ~8.5e-2, CIC term at
+the baseline ~8.3e-2): lambda = 1.0 makes them comparable, 0.3 makes the CIC term ~30% of the
+flow term. `runs/cic_train.sh` runs both from scratch, 3000 steps, ~1.8 h each.
+The log-compression in cic_loss is a choice, not a derivation, and is worth revisiting: it
+weights underdense cells more, while the failure being targeted is in the peaks.

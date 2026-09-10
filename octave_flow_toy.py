@@ -384,6 +384,50 @@ def git_commit():
         return None
 
 
+# ----------------------------------------------------------------------------
+# Eulerian CIC density (differentiable), for the optional lag2eul loss term
+# ----------------------------------------------------------------------------
+def cic_density(x_hf, offset):
+    """CIC deposit of the particles at q + Psi onto the fine grid.
+
+    x_hf: (B,3,N,N,N) displacements in units of the fine cell h_f.
+    Returns (B,N,N,N) with mean 1.  Differentiable in x_hf through the CIC weights
+    (the cell indices are piecewise constant, which is the usual and correct treatment).
+
+    Motivation (RUNLOG 2026-09-10): the Lagrangian octave-band P/P and the Eulerian density
+    power disagree about which model is better, and the loss cannot currently see the Eulerian
+    side at all -- a conditional-mean displacement is too smooth in Lagrangian space yet makes
+    caustics that are too thin and too dense.
+    """
+    B, N = x_hf.shape[0], x_hf.shape[-1]
+    ax = torch.arange(N, device=x_hf.device, dtype=x_hf.dtype) + offset
+    q = torch.stack(torch.meshgrid(ax, ax, ax, indexing="ij"))
+    x = (q[None] + x_hf) % N
+    i0 = torch.floor(x)
+    f = x - i0
+    i0 = i0.long() % N
+    rho = torch.zeros(B, N * N * N, device=x_hf.device, dtype=x_hf.dtype)
+    for dx in (0, 1):
+        wx = (1 - f[:, 0]) if dx == 0 else f[:, 0]
+        ix = (i0[:, 0] + dx) % N
+        for dy in (0, 1):
+            wy = (1 - f[:, 1]) if dy == 0 else f[:, 1]
+            iy = (i0[:, 1] + dy) % N
+            for dz in (0, 1):
+                wz = (1 - f[:, 2]) if dz == 0 else f[:, 2]
+                iz = (i0[:, 2] + dz) % N
+                idx = ((ix * N + iy) * N + iz).reshape(B, -1)
+                rho = rho.scatter_add(1, idx, (wx * wy * wz).reshape(B, -1))
+    return rho.reshape(B, N, N, N)
+
+
+def cic_loss(x1_pred, x1_true, offset):
+    """MSE on log(1 + delta) of the CIC density.  The log compresses the dynamic range so the
+    gradient is not owned by a handful of cells; the compression is a knob, not a derivation."""
+    return F.mse_loss(torch.log1p(cic_density(x1_pred, offset)),
+                      torch.log1p(cic_density(x1_true, offset)))
+
+
 def net_input(x_t, Pc, D):
     return torch.cat([x_t - Pc, D], dim=1)
 
@@ -486,6 +530,11 @@ def main():
                     help="sampled octave: curl-free only (default, reproduces earlier runs) or "
                          "plus the measured transverse component, which the lattice makes ~17% of the "
                          "octave variance on real data (generative mode only; emulator mode is unaffected)")
+    ap.add_argument("--cic-weight", type=float, default=0.0,
+                    help="weight of an Eulerian CIC term added to the flow-matching loss: "
+                         "MSE on log(1+delta) of the density built from the PREDICTED x1 "
+                         "(x_t + (1-t) v). 0 = off, which is the default and reproduces "
+                         "earlier runs. See RUNLOG 2026-09-10 for why it exists.")
     ap.add_argument("--regression", action="store_true",
                     help="direct one-step regression baseline: same network and inputs, trained at t=0 only "
                          "(predict x1 - x0 from x0), evaluated with a single Euler step")
@@ -572,6 +621,9 @@ def main():
             xt = (1 - t)[:, None, None, None, None] * x0 + t[:, None, None, None, None] * x1
             v = model(net_input(xt, Pc, D), t, s_level[: args.batch])
             loss = F.mse_loss(v, x1 - x0)
+            if args.cic_weight > 0:
+                x1p = xt + (1 - t)[:, None, None, None, None] * v
+                loss = loss + args.cic_weight * cic_loss(x1p, x1, args.offset)
             opt.zero_grad(set_to_none=True); loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
             with torch.no_grad():
