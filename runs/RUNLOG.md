@@ -1093,3 +1093,35 @@ the baseline ~8.3e-2): lambda = 1.0 makes them comparable, 0.3 makes the CIC ter
 flow term. `runs/cic_train.sh` runs both from scratch, 3000 steps, ~1.8 h each.
 The log-compression in cic_loss is a choice, not a derivation, and is worth revisiting: it
 weights underdense cells more, while the failure being targeted is in the peaks.
+
+## 2026-09-10 11:06 — --jac-weight: the purely Lagrangian competitor to the CIC loss (owner approved)
+
+Owner's question: can the Eulerian information be supplied without ever using a density?
+Answer: in single-stream regions, yes, exactly — J(q) = det(I + dPsi/dq) is 1/rho_Eul at the
+particle's position, and it is a local, fully differentiable functional of Psi alone. The
+failure modes seen today are visible in J directly: the regression's over-concentration is
+J -> 0 too fast, the flow's under-concentration is J not small enough. In multi-stream regions
+(29-37% here) J constrains each stream separately instead of their sum — arguably a stronger
+constraint than the CIC density, and the honest caveat is that it is not identical information.
+
+Implementation (`jac_loss`): spectral derivatives via sc.gradients (consistent with every other
+derivative in the code), hand-written 3x3 determinant (differentiable everywhere, no linalg
+backend needed on MPS), MSE on **asinh(J)** — linear around J = 0, which is exactly the
+caustics the Lagrangian MSE cannot see; log-like in the void tail; smooth through the
+multi-stream sign change, where log|J| would diverge at every caustic. The compression is a
+knob, not a derivation (same status as log1p in cic_loss).
+
+Verified: manual det vs np.linalg.det max|diff| 5.7e-06; J<0 fraction of the test-box truth =
+0.370, reproducing phase0's fine-level multi-stream fraction; identical inputs -> exactly 0;
+gradients finite (rms 2.9e-05); default path bit-identical (16->32 smoke test 3.0888e-02);
+MPS fine at 2.00 s/step (+9%, cheaper than CIC's +15%).
+
+lambda calibration: jac term at the baseline = 2.041 against the flow term's ~0.085 at
+convergence, so **0.04** makes them comparable and **0.012** makes the jac term ~30% — the
+same logic as the CIC pair's 1.0 / 0.3. (A smoke test at jac-weight 1.0 shows the total loss
+rising — the term would dominate by 25x; calibration matters.)
+
+Queue now: C1 cic 1.0 (resumes from step 1274) -> C2 cic 0.3 -> C3 jac 0.04 -> C4 jac 0.012,
+3000 steps each, all `--octave-sampler full`, ~6 h total. The comparison at the end is
+four-way: no extra term / CIC x2 / jac x2, all against the same baseline and truth, on
+Lagrangian AND Eulerian metrics.
