@@ -1178,3 +1178,33 @@ Two incidental findings:
   Lagrangian and Eulerian verdicts on the sampler fix point in opposite directions.
 
 C3 (jac 0.04) still training on the GPU throughout; nothing here touched the training script.
+
+## 2026-09-10 18:40 — Stage 7 Part 2: the biased jac runs (C3/C4), evaluated
+
+C3/C4 finished at 14:42 (3000 steps each, lambda = 0.04 / 0.012, --octave-sampler full).
+Final printed loss (total, flow-MSE + lambda*jac, not separable post hoc from the log — a gap
+the Part 3 code fixes by printing both terms): R 8.51e-2, C3 9.09e-2, C4 8.64e-2.
+
+| | oct r | oct P/P | rms (m/s) | gen P/P | svs P/P | P_d/P @kNyc | @1.5 | mass>100 | kernE | gen P_d @kNyc |
+|---|---|---|---|---|---|---|---|---|---|---|
+| R  flow (no term) | 0.7327 | 0.9759 | 0.409 (.491/.370) | 0.9808 | 1.0003 | 0.963 | 0.777 | 0.0401 | 13.9 | 0.860 |
+| C3 jac 0.04 | 0.7376 | 0.9692 | 0.400 (.480/.362) | 0.9680 | 0.9973 | **1.002** | **0.845** | 0.0407 | 14.3 | **0.912** |
+| C4 jac 0.012 | 0.7350 | 0.9760 | 0.407 (.487/.368) | 0.9793 | 0.9973 | 0.979 | 0.806 | 0.0400 | 14.3 | 0.880 |
+
+(truth mass>100 = 0.0524)
+
+Read with §5.5/§5.7d in mind, as instructed:
+- The biased term WORKS on this box and it is monotonic in lambda: Eulerian power at k_Ny,c
+  0.963 -> 0.979 -> 1.002, at 1.5 k_Ny,c 0.777 -> 0.806 -> 0.845. And with NO Lagrangian cost —
+  r actually rises (0.7327 -> 0.7376) and rms falls (0.409 -> 0.400).
+- The bias signature the note predicts is present but small: generative-mode octave P/P drifts
+  0.9808 -> 0.9680 and sample-vs-sample 1.0003 -> 0.9973 (about 1%). At this lambda and level
+  the drift is far below the Eulerian gain.
+- NOT §5.7e's failure mode: P_delta did move, so the h_f-grid J is not merely matching
+  roughness here.
+- The kernel fraction E did NOT drop (13.9 -> 14.3): the jac term closed the k-integrated
+  power deficit without reducing the density-weighted coherent residual; r_delta unchanged
+  (0.975). So the term fixes the SPECTRUM, not the halo-mislocation error — consistent with
+  Q_J having no relabelling kernel and the residual living exactly there.
+- J quantiles moved toward truth but remain narrower (printed above); mass>100 nearly
+  unchanged (0.0407 vs truth 0.0524) — the 1-halo compactness deficit is not fixed by this term.
