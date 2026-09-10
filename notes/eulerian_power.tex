@@ -1,0 +1,296 @@
+% 编译：xelatex（两遍）。Mac 上没有 Noto CJK 时把第一行改成
+%   \documentclass[11pt,UTF8,fontset=mac]{ctexart}
+% 并删掉下面两行 \setCJKmainfont / \setCJKsansfont。
+\documentclass[11pt,UTF8,fontset=none]{ctexart}
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue!50!black,urlcolor=blue!50!black}
+\usepackage{enumitem}
+
+\newcommand{\q}{\mathbf{q}}
+\newcommand{\kk}{\mathbf{k}}
+\newcommand{\x}{\mathbf{x}}
+\newcommand{\rr}{\mathbf{r}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\Ny}{{\rm Ny}}
+\newcommand{\Pd}{P_\delta}
+\newcommand{\Psic}{\Psi_c}
+\newcommand{\Psif}{\Psi_f}
+\newcommand{\QE}{\mathcal Q_E}
+
+\title{欧拉密度功率谱为什么不是 1，以及从数学上怎么修}
+\author{为张潇文准备；配套代码 \texttt{eulerian\_metric.py}}
+\date{2026 年 9 月 10 日（v1.1：加 5.7 节 Jacobian）}
+
+\begin{document}
+\maketitle
+
+\section*{结论先行}
+
+\begin{quote}\itshape
+密度 $1+\delta$ 是位移 $\Psi$ 的\textbf{指数}泛函。拉格朗日 octave band 里的两个数 $(r,\;P/P_{\rm true})$ 把模型的位移场分成"相干部分 $a\,d_{\rm true}$"和"与真值无关的部分 $n$"，两者对欧拉密度的作用方向相反：$n$ 把焦散（caustic）抹平，密度功率按 $e^{-k^2\sigma_n^2}$ 下降；$a<1$ 的收缩把晕压得更紧，1-halo 项按 $|\tilde u(ak)|^2/|\tilde u(k)|^2$ 上升。回归落在 $P/P=r^2$ 线上（$\sigma_n\approx0$，$a=r$）所以欧拉超出；flow 落在 $P/P=1$ 线上（$a<1$，$\sigma_n^2=(1-r^2)\Var d$）所以欧拉不足；baseline 两者兼有。\textbf{拉格朗日的"生成线" $P/P=1$ 和欧拉的"比值 $=1$"是两条不同的线，只在 $r=1$ 处相交。}
+
+精确极限下 flow matching 的样本对任何泛函都有正确分布，所以生成模式的 $\Pd/\Pd^{\rm true}=1$ 是定理；emulator 模式的条件采样器在期望意义上也是；条件均值（回归）在 multi-stream 区永远不是。因此 flow 的欧拉不足是\textbf{学习残差}，回归的欧拉超出是\textbf{估计量本身的性质}。
+
+修法：(i) flow matching 的损失可以换成任何只依赖当前状态、不依赖目标的正定二次型而不改变极小元（三行证明）；把二次型取成"欧拉线性化度量" $\QE(e)=\sum_k W(k)\,|\widehat{\nabla\!\cdot(\rho e)}(k)|^2$，它的核恰好是"不改变密度的位移误差"（同一欧拉位置的粒子互换、无散动量），有限容量网络的残差会被推进这个核里，于是 $r<1$ 也能有 $\Pd/\Pd^{\rm true}\to1$；(ii) 把粗场的欧拉密度拉回到 $\q$ 作为输入；(iii) 回归的欧拉超出只能用分布性目标（flow）或接受 Paper IV 式 CIC 损失带来的另一种偏差。
+\end{quote}
+
+\section{数字}
+
+自跑 MP-Gadget 自相似集，$64\to128$，$z=0$，cube 窗，3000 步（\texttt{runs/REPORT\_6.md}）。octave band 的 $(r,P/P)$ 与欧拉 CIC 密度功率比在 $k_{\Ny,c}=2.01\,h/{\rm Mpc}$ 处：
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+ & $r$ & $P_\Psi/P_\Psi^{\rm true}$（octave） & $\Pd/\Pd^{\rm true}(k_{\Ny,c})$ & $\Pd/\Pd^{\rm true}(4\,h/{\rm Mpc})$\\
+\midrule
+粗场 $P\Psic$ & — & — & 0.677 & 0.255\\
+baseline $x_0$ & 0.394 & 1.292 & 0.323 & 0.021\\
+回归 & 0.729 & 0.539 & 1.919 & 2.571\\
+flow（emulator） & 0.548 & 1.070 & 0.714 & 0.223\\
+flow（generative） & 0.170 & 1.106 & 1.109 & 0.681\\
+\bottomrule
+\end{tabular}
+\end{center}
+细网格上 detail 的每分量方差 $\Var(d/h_f)=0.242$，multi-stream 体积比 $0.37$。次序在两个空间里是反的：拉格朗日 baseline $>$ flow $>$ 回归，欧拉 回归 $>$ flow $>$ baseline。
+
+\section{密度是位移的指数泛函}
+
+粒子在 $\x=\q+\Psi(\q)$，质量守恒给
+\begin{equation}
+1+\delta(\x)=\int\dd^3q\;\delta_D\big(\x-\q-\Psi(\q)\big),\qquad
+\hat\delta(\kk)=\int\dd^3q\;e^{-i\kk\cdot\q}\big(e^{-i\kk\cdot\Psi(\q)}-1\big).
+\label{eq:delta}
+\end{equation}
+展开指数：
+\begin{equation}
+\hat\delta(\kk)=-i\kk\cdot\hat\Psi(\kk)\;-\;\tfrac12\int\dd^3q\,e^{-i\kk\cdot\q}\big(\kk\cdot\Psi(\q)\big)^2+\cdots
+\end{equation}
+第一项是线性的：octave band 的 $P_\Psi$ 只约束它的 octave 部分。第二项起所有波段互相耦合，而 $z=0$ 时 $k\gtrsim k_{\Ny,c}$ 处的密度功率几乎全由高阶项贡献。两点形式更直接：
+\begin{equation}
+\Pd(k)=\int\dd^3r\;e^{-i\kk\cdot\rr}\Big[\big\langle e^{-i\kk\cdot\Delta\Psi(\rr)}\big\rangle-1\Big],\qquad
+\Delta\Psi(\rr):=\Psi(\q+\rr)-\Psi(\q).
+\label{eq:twopoint}
+\end{equation}
+高 $k$ 由小 $\rr$ 决定，而 $\rr\to0$ 时 $\Delta\Psi\approx D\,\rr$，$D_{ij}=\partial_i\Psi_j$。单流区 $1+\delta=1/|\det(I+D)|$，焦散就是 $\det(I+D)\to0$；多流区对各支求和。所以 \textbf{$k\gtrsim k_{\Ny,c}$ 的密度功率是格距尺度上 $D$ 的整个概率分布（含尾巴）的函数}——一个高阶统计量，不是 $\Psi$ 的二阶矩。在高斯近似下 $\langle e^{-i\kk\cdot\Delta\Psi}\rangle=\exp[-\tfrac12k_ik_j\Sigma_{ij}(\rr)]$（Matsubara 的 Lagrangian resummation），这个形式没有焦散；焦散全在非高斯部分。
+
+\section{两种相反的失败}
+
+\subsection{把模型位移分成相干部分和噪声}
+
+在 octave band 里对模型的 detail 做投影：
+\begin{equation}
+d_m=a\,d_{\rm true}+n,\qquad a=r\sqrt{P_m/P_{\rm true}},\qquad
+\sigma_n^2=\Big(\frac{P_m}{P_{\rm true}}-r^2\Big)\Var(d),
+\label{eq:split}
+\end{equation}
+$n$ 与 $d_{\rm true}$ 不相关（按定义），$\sigma_n^2$ 是每分量方差。代入第 1 节的数字（单位 $h_f^2$）：
+\begin{center}
+\begin{tabular}{lccc}
+\toprule
+ & $a$ & $\sigma_n^2/h_f^2$ & $e^{-k^2\sigma_n^2}$ at $k_{\Ny,c}$（$k^2h_f^2=\pi^2/4$）\\
+\midrule
+baseline & 0.45 & 0.264 & 0.52\\
+flow（emulator） & 0.57 & 0.181 & 0.64\\
+回归 & 0.54 & 0.061 & 0.86\\
+\bottomrule
+\end{tabular}
+\end{center}
+回归几乎没有噪声（它是条件均值），flow 和 baseline 的噪声方差和相干部分同量级。
+
+\subsection{独立噪声抹平焦散：一个精确公式}
+
+设 $n(\q)$ 是与 $\Psi$ 独立的高斯场，先取最简单的情形——每个粒子独立，每分量方差 $\sigma_n^2$（"白"噪声）。$N^3$ 个粒子、每个质量 $h^3$：
+\begin{equation}
+\hat\delta_m(\kk)=h^3\sum_{\q}e^{-i\kk\cdot\x_\q}\,e^{-i\kk\cdot n_\q},\qquad
+|\hat\delta_m|^2=h^6\sum_{\q,\q'}e^{-i\kk\cdot(\x_\q-\x_{\q'})}e^{-i\kk\cdot(n_\q-n_{\q'})}.
+\end{equation}
+对 $n$ 取期望：$\q\ne\q'$ 的项得 $\langle e^{-i\kk\cdot n}\rangle\langle e^{i\kk\cdot n}\rangle=e^{-k^2\sigma_n^2}$，$\q=\q'$ 的项得 1。于是
+\begin{equation}
+\boxed{\;\Pd[\Psi+n](k)=e^{-k^2\sigma_n^2}\,\Pd[\Psi](k)+\big(1-e^{-k^2\sigma_n^2}\big)\,h^3\;}
+\label{eq:smear}
+\end{equation}
+（$h^3$ 是散粒噪声，$k_{\Ny,c}$ 处比 $\Pd$ 低两个量级，可以忽略）。这是"红移空间 FoG"同一个公式。要点：\textbf{阻尼因子只依赖 $\sigma_n^2$，与 $\Psi$ 的非线性程度无关}——焦散有多尖，都按同一个因子抹平。
+
+$n$ 若是带限的（octave band），$\Delta n(\rr)$ 在 $r\lesssim$ 相关长度时比白噪声小，阻尼理应弱一些。我在一个 53\% 体积多流的 Zel'dovich 场（$128^3$，rms 位移 $1.4h_c$）上直接测了（\texttt{checks/smear\_check.py}）：
+\begin{center}
+\begin{tabular}{lcccc}
+\toprule
+$\sigma_n/h_f$ & 公式 \eqref{eq:smear} & 白噪声，实测 & octave 带限噪声，实测 & \\
+\midrule
+0.30 & 0.948 / 0.850 & 0.948 / 0.828 & 0.947 / 0.818 & $k/k_{\Ny,c}=0.5$ / $1$\\
+0.42 & 0.900 / 0.735 & 0.902 / 0.703 & 0.898 / 0.688 & \\
+0.60 & 0.808 / 0.563 & 0.807 / 0.503 & 0.805 / 0.490 & \\
+\bottomrule
+\end{tabular}
+\end{center}
+到 $k_{\Ny,c}$ 为止公式准到 10\% 以内，带限噪声和白噪声差不到 2\%。所以对我们的情形，\eqref{eq:smear} 就是可用的定量工具。
+
+\subsection{用到我们的模型上}
+
+模型的欧拉功率是
+\begin{equation}
+\frac{\Pd^{(m)}}{\Pd^{\rm true}}\;\approx\;e^{-k^2\sigma_n^2}\cdot\frac{\Pd[\Psic+a\,d_{\rm true}]}{\Pd^{\rm true}},
+\label{eq:model}
+\end{equation}
+第二个因子是"只有相干部分"的密度功率，介于粗场（0.68）和 1 之间。flow 在 $k_{\Ny,c}$ 处测得 0.71，阻尼 0.64，说明 $\Psic+0.57\,d_{\rm true}$ 的密度功率已经接近真值——相干的 57\% detail 把大部分 $k_{\Ny,c}$ 处的结构补回来了，然后噪声又把它抹掉三分之一。baseline 的阻尼 0.52 乘上 $\Psic+0.45\,d_{\rm true}$ 的功率（$\lesssim1$）给 $\lesssim0.5$，测得 0.32：随机线性 octave 不但没造出结构，还把粗场已有的结构抹掉了一半。这两个因子都能在测试盒上直接构造出来验证（第 6 节 T1）。
+
+更重要的是一个一般结论。在拉格朗日"生成线" $P_m/P_{\rm true}=1$ 上，\eqref{eq:split} 给 $\sigma_n^2=(1-r^2)\Var(d)$，于是
+\begin{equation}
+\boxed{\;\frac{\Pd^{(m)}}{\Pd^{\rm true}}\lesssim\exp\!\big[-k^2(1-r^2)\Var(d)\big]\quad\text{（在 }P/P=1\text{ 线上）}\;}
+\end{equation}
+只要 $r<1$，拉格朗日功率正确的模型在欧拉空间\textbf{必然}功率不足——除非它的"噪声"不是独立噪声（见 4.3）。反过来在 $r^2$ 线上 $\sigma_n=0$，没有抹平，但有下面的收缩效应。
+
+\subsection{条件均值把晕压紧：1-halo 项超出}
+
+回归在 $r^2$ 线上，$d_{\rm reg}\approx r\,d_{\rm true}$，即 detail 被\textbf{收缩}了 $a=r=0.73$。看一块多流的拉格朗日区域 $Q$，真实位置 $\x(\q)=\x_h+u(\q)$，$u$ 是粒子在晕内的位置（轨道相位），给定信息集 $I$ 不可预测：$\E[u\mid I]\approx0$ 或很小。条件均值给 $\x_{\rm reg}(\q)=\x_h+a\,u(\q)$：整个晕按 $a$ 缩小，密度轮廓 $u(\x)\to a^{-3}u(\x/a)$，Fourier 形状因子 $\tilde u(k)\to\tilde u(ak)$。1-halo 项
+\begin{equation}
+\Pd^{1h}(k)=\frac1{\bar\rho^2}\int\dd M\,n(M)\,M^2\,|\tilde u(k\mid M)|^2
+\;\longrightarrow\;
+\frac1{\bar\rho^2}\int\dd M\,n(M)\,M^2\,|\tilde u(ak\mid M)|^2 .
+\end{equation}
+$|\tilde u|$ 随 $k$ 单调下降，所以 $|\tilde u(ak)|>|\tilde u(k)|$：超出随 $k$ 增大，趋向 $1/|\tilde u(k)|^2$（点质量极限，纯散粒噪声 $\int nM^2$）。这正是测到的 $1.1\to1.9\to2.6$ 单调上升，和峰密度 $5619$ 对 $3480$。$a\to0$ 的极限就是"整块区域塌到一个点"。收缩在拉格朗日空间\textbf{减少}功率（$a^2<1$），在欧拉空间\textbf{增加}功率——和噪声正好相反，这就是次序反转的全部原因。
+
+\section{精确极限下的答案}
+
+\subsection{生成模式}
+flow matching 定理（主笔记 Theorem 6.1）：若 $v_\theta=u_t:=\E[x_1-x_0\mid x_t]$，ODE 把 $p_0$ 输运到 $p_1$。样本 $\Psi\sim p_1$，于是任何泛函 $F[\Psi]$——包括 $\Pd(k)$——都有正确分布。\textbf{生成模式 $\Pd/\Pd^{\rm true}=1$ 是定理}，测到的 1.11 是学习误差加 source 先验与真实 IC octave 分布的差别（横向分量，见 5.6）。
+
+\subsection{Emulator 模式：采样器对，均值不对}
+设信息集 $I$（粗场 + 真实 octave），真值 $\Psif\sim p(\cdot\mid I)$。一个理想的条件采样器输出 $\Psi'\sim p(\cdot\mid I)$，与 $\Psif$ 同分布，所以
+\begin{equation}
+\E\big[\Pd[\Psi']\,\big|\,I\big]=\E\big[\Pd[\Psif]\,\big|\,I\big]:
+\end{equation}
+\textbf{即使 $r<1$，条件采样器的欧拉功率在期望意义上也是对的。} 而条件均值 $\bar\Psi=\E[\Psif\mid I]$ 是同一个分布的一个泛函，$\Pd[\bar\Psi]\ne\E[\Pd[\Psif]\mid I]$（Jensen 型的差），在多流区差得是 $O(1)$（3.4 节）。所以：\textbf{回归的欧拉超出是估计量的性质，不是 bug，也不能靠改损失权重消除；flow 的欧拉不足则是它没有达到理想采样器——学习残差。}
+
+\subsection{为什么学习残差表现得像独立噪声}
+拉格朗日 $L^2$ 损失对残差的方向没有任何偏好：网络放不下的那部分误差是"一般位置"的，它的统计行为就是独立噪声，于是 \eqref{eq:smear} 全额生效——这正是 emulator 模式 flow 的欧拉功率贴着粗场走的原因。对照生成模式：那里输出不是"真值 + 噪声"，而是一个自洽的样本（自己的焦散、自己的晕），相对真值的 $r\approx0.17$ 却有 $\Pd/\Pd^{\rm true}=1.11$。\eqref{eq:split} 的分解对它不适用，因为它的"$n$"和自身的粗场是强耦合的。这告诉我们修法的方向：\textbf{不是消灭残差（做不到），而是把残差推到不改变密度的方向上去。}
+
+\section{解法的推导}
+
+\subsection{损失度量的自由度}
+
+\textbf{命题。} 设 $Y=x_1-x_0$，$A(x_t,t)$ 是任意只依赖 $(x_t,t)$（因而也可依赖粗场 $C$，它是 $x_t$ 的函数）的正定二次型。则
+\begin{equation}
+\arg\min_v\;\E\big[(v(x_t,t)-Y)^{\!\top}A(x_t,t)\,(v(x_t,t)-Y)\big]=\E[Y\mid x_t]=u_t .
+\end{equation}
+\emph{证明。} 条件在 $x_t$ 上，$A$ 是常数矩阵；对 $v$ 求导得 $2A\,(v-\E[Y\mid x_t])=0$，$A$ 正定所以 $v=\E[Y\mid x_t]$。$\square$
+
+推论：Fourier 权重 $W(k)$、拉格朗日位置权重 $w(\q;C)$、在欧拉位置上的沉积——只要不用到 $x_1$——都不改变精确极限下的速度场和 ODE 的边缘分布。它们改变的只是有限容量网络\textbf{把误差放在哪里}。这是所有下面修法的合法性来源；反过来，任何用到 $x_1$ 的非二次项（5.5）都会改变极小元。
+
+\subsection{欧拉线性化度量}
+
+把 \eqref{eq:delta} 对位移误差 $e(\q)$ 线性化：
+\begin{equation}
+\hat\delta[\Psi+e](\kk)-\hat\delta[\Psi](\kk)=\int\dd^3q\,e^{-i\kk\cdot\x(\q)}\big(e^{-i\kk\cdot e(\q)}-1\big)
+\approx-i\kk\cdot\hat p_e(\kk),\qquad
+p_e(\x):=\int\dd^3q\;e(\q)\,\delta_D\big(\x-\x(\q)\big).
+\label{eq:lin}
+\end{equation}
+$p_e$ 是把误差当作"动量"沉积到\textbf{欧拉位置}上得到的场；实空间里 $h_e=-\nabla\cdot(\rho\,e)$，$\rho=1+\delta$，多流区自动对各支求和，单流区 $\rho=1/|\det(I+D)|$——\textbf{焦散处的误差自动被密度加权}。定义二次型
+\begin{equation}
+\boxed{\;\QE(e)=\sum_{\kk}W(k)\,\big|\kk\cdot\hat p_e(\kk)\big|^2=\sum_\kk W(k)\,|\hat h_e(\kk)|^2\;}
+\label{eq:QE}
+\end{equation}
+它是 $e$ 的半正定二次型，$\QE(e)=$ 一阶欧拉密度误差的（加权）功率。它的\textbf{核}是所有一阶不改变密度的位移误差：
+\begin{enumerate}[nosep]
+\item 沉积后动量无散的误差（$\kk\cdot\hat p_e=0$）；
+\item \textbf{处在同一欧拉位置的粒子之间的相对误差}——$e(\q_a)=-e(\q_b)$，$\x(\q_a)=\x(\q_b)$：$p_e$ 相消。这正是多流区的"粒子标签"不确定性，第 4 节说的不可学习部分；
+\item $W(k)=0$ 的波数。
+\end{enumerate}
+离散化：用 CIC 核的导数沉积，$h_e(\x_g)=\sum_p e_p\cdot\nabla_{\x_p}W_{\rm cic}(\x_g-\x_p)$，它是 CIC 密度对位移的\textbf{精确}一阶变化（\texttt{cic\_gradient\_deposit}；自检：与有限差分相对误差 $10^{-2}$，来自极少数跨越格面的粒子）。核的自检：把欧拉距离小于 $0.5/0.2/0.1$ 格的粒子对互换，$\QE/\|e\|^2$ 相对随机误差场是 $0.25/0.041/0.016$——按距离平方趋于零。
+
+\textbf{位置从哪里来。} 命题要求二次型不依赖 $x_1$。两个合法选择：(a) $\x_C(\q)=\q+P\Psic(\q)$，粗场的欧拉位置，纯粹是 $C$ 的函数；(b) 当前插值 $x_t$ 给出的位置（对网络输出 stop-gradient，作为度量的一部分而非被优化的量）。$t\to1$ 时 (b) 趋于真值处的精确线性化。
+
+\textbf{组合度量。} $\QE$ 半正定，配上拉格朗日项保证正定：
+\begin{equation}
+\boxed{\;\mathcal L=\E\Big[\|v_\theta-Y\|^2_{\rm Lag}+\lambda\,\QE\big(v_\theta-Y;\,\x_C\text{ 或 }x_t\big)\Big]\;}
+\label{eq:loss}
+\end{equation}
+按命题，极小元仍是 $u_t$。$\lambda$ 的量纲：$\QE$ 是密度变化的方差（无量纲，每格平均密度 1），$\|\cdot\|_{\rm Lag}$ 是 $h_f^2$ 单位的位移方差；初始化时让两项同量级即可，再扫 $\lambda$。
+
+\textbf{有限容量下发生什么。} 网络在自己的函数类里最小化 \eqref{eq:loss}，残差 $\varepsilon=v_\theta-u_t$ 不为零。$\lambda$ 越大，残差越被推向 $\ker\QE$：欧拉不可见的方向。于是输出可以写成 $\Psi'=\Psi_{\rm coh}+\varepsilon$，$\varepsilon$ 主要由"同一晕内粒子的重排"和无散动量组成——拉格朗日 $r$ 未必提高，但 \eqref{eq:smear} 的阻尼不再生效，因为 $\varepsilon$ 不再是独立噪声。\textbf{这就是 $r<1$ 而 $\Pd/\Pd^{\rm true}\to1$ 的机制}，也是 4.2 节"采样器对、均值不对"在有限容量下能实现的方式。三个可检验的预言：(a) 拉格朗日 $r$ 基本不变或略降；(b) $\Pd/\Pd^{\rm true}$ 向 1 移动；(c) 残差的"核分数" $\QE(\varepsilon)/\|\varepsilon\|^2$ 相对于同功率谱的高斯场显著下降。
+
+\subsection{特例：$k^2$ 权重（Jacobian 度量）}
+单流、$|D|\ll1$ 时 \eqref{eq:lin} 退化为 $\hat h_e\approx-i\kk\cdot\hat e(\kk)$，$\QE\approx\sum_k k^2|\hat e_\parallel|^2$：给散度加 $k^2$ 权重。它把 octave band 相对粗带抬高 $(k_f/k_c)^2\sim4$，也是合法度量，但看不到多流区和密度加权。它是 \eqref{eq:QE} 在弱非线性极限的近似，不必单独实现；当 $\x_C\to\q$（无位移）时 \eqref{eq:QE} 自动变成它。
+
+\subsection{输入：把欧拉信息拉回拉格朗日网格}
+$u_t=\E[Y\mid x_t]$ 是 $x_t$ 的泛函，网络用有限感受野的拉格朗日卷积去逼近。物理上决定 $\Psif(\q)$ 的是 $\x(\q)$ 的\textbf{欧拉}邻居——同一个晕里的粒子来自半径 $R_L$ 的拉格朗日区域，$z=0$ 时 rms 位移 $\sim4$–$5\,h_c$，网络得先在内部重建 $\q\mapsto\x$ 才能知道谁和谁在一起。把粗场的欧拉密度拉回来直接给它：
+\begin{equation}
+c(\q)=\log\big[1+\delta_c\big(\x_C(\q)\big)\big],\qquad \x_C(\q)=\q+P\Psic(\q),
+\end{equation}
+（可再加 $\x_C(\q)$ 处的粗场潮汐张量）。它是 $C$ 的函数，平移等变，零成本（一次 CIC + 一次三线性插值，\texttt{eulerian\_inputs}），多流区和它的欧拉尺度直接成为输入而不是待推断的量。这不改变任何理论，只改变函数类对 $u_t$ 的逼近能力。
+
+\subsection{允许有偏的选项，以及偏差是多少}
+若直接在 $x$-预测 $\hat x_1=x_t+(1-t)v_\theta$ 上加 CIC 密度损失：
+\begin{equation}
+\mathcal L'=\E\|v-Y\|^2+\lambda\,\E\big\|\rho(\hat x_1)-\rho(x_1)\big\|^2,
+\end{equation}
+驻点条件为
+\begin{equation}
+v^*=\E[Y\mid x_t]-\lambda(1-t)\,\E\Big[J_\rho(\hat x_1)^{\!\top}\big(\rho(\hat x_1)-\rho(x_1)\big)\,\Big|\,x_t\Big],
+\end{equation}
+第二项用到了 $x_1$，不是 $x_t$ 的常数：$v^*\ne u_t$，ODE 不再把 $p_0$ 输运到 $p_1$。偏差正比于 $\lambda(1-t)$，$t\to1$ 时消失。注意 $\hat x_1=\E[x_1\mid x_t]$ 本身就是一个条件均值，小 $t$ 时它的密度会像回归一样过度坍缩，密度损失会强迫速度场偏离条件均值去"补救"一个本不该由速度场承担的问题。所以\textbf{对 flow 不建议}；若一定要用，权重取 $t^p$、$p$ 大，只在 $t$ 接近 1 时生效。
+
+对\textbf{回归}（只有 $t=0$）没有定理需要保护，这就是 Paper III/IV 的 CIC 损失。它做的事可以算出来：拉格朗日项想要 $\E[u\mid I]\to0$（塌成点），密度项想要 $\rho(\x_h+a u)$ 的轮廓等于平均轮廓（$a\to1$），折中的 $a^*(\lambda)$ 介于两者之间——\textbf{轮廓对了、粒子标签错了}，拉格朗日 $r$ 下降。这是回归能达到的最好结果，适合纯 emulation，不适合生成。
+
+
+\subsection{纯拉格朗日的替代：Jacobian}\label{sec:jac}
+
+本地 Claude Code 提出：不碰密度，用形变张量的行列式 $J(\q)=\det(I+\partial\Psi/\partial\q)$——单流区 $\rho(\x(\q))=1/|J(\q)|$——匹配 $\log|J|$ 或它的分位数，整个计算局域、可微、不离开 $\q$ 空间。逐条推导它对不对。
+
+\textbf{(a) 两种失败在 $J$ 里都看得见，方向相反。} 收缩：多流块内 $\x_{\rm reg}=\x_h+a\,u(\q)$，$\x_h$ 在块内是常数，所以 $\partial\x_{\rm reg}/\partial\q=a\,\partial u/\partial\q$，
+\begin{equation}
+J_{\rm reg}=a^3J_{\rm true}\qquad(\text{多流块内}),
+\end{equation}
+$a=0.73$ 给 $0.39$：$|J|$ 系统性偏小，分布变窄。噪声：$D_{\rm flow}=D_{\rm coh}+\partial n$，octave 带限、$\sigma_n=0.42h_f$ 的噪声梯度 rms 是 $0.80$（Zel'dovich 场实测）——对 Jacobian 是 $O(1)$ 的扰动，$J$ 的分布被卷宽（同一场：真值 1\%/99\% 分位数 $-12/31$，加噪后 $-21/39$，octave 收缩 0.73 后 $-7/22$）。所以 $J$ 的一点分布是一个能\textbf{同时}分辨两种失败的诊断量——放进 \texttt{summarize()}，没有疑问。
+
+\textbf{(b) 线性化：$J$ 度量就是欧拉散度的拉格朗日写法。} Jacobi 公式 $\dd\det A=\operatorname{tr}[\operatorname{adj}(A)\,\dd A]$，$A=I+\partial\Psi/\partial\q$：
+\begin{equation}
+\delta J=\operatorname{tr}\!\big[\operatorname{adj}(A)\,\partial e/\partial\q\big],\qquad
+\frac{\delta J}{J}=\operatorname{tr}\!\big[A^{-1}\partial e/\partial\q\big]=\frac{\partial e_j}{\partial q_i}\frac{\partial q_i}{\partial x_j}=\nabla_{\x}\!\cdot e ,
+\end{equation}
+即 $\delta\log|J|=-\delta\log\rho|_{\rm particle}=\nabla_\x\cdot e$——跟随粒子看到的一阶密度变化。对照 \eqref{eq:lin} 的欧拉写法 $h_e=-\nabla\cdot(\rho e)=-\rho\nabla\cdot e-e\cdot\nabla\rho$：差一个平流项，并且欧拉写法对各流\textbf{求和}，拉格朗日写法\textbf{逐流}。由此得到一个合法的二次型（$A$、$J$ 取自状态，不取自目标）：
+\begin{equation}
+\boxed{\;\mathcal Q_J(e)=\Big\langle\frac{|\operatorname{tr}[\operatorname{adj}(A_{\rm state})\,\partial e]|^2}{(J_{\rm state}^2+\epsilon^2)^{p/2}}\Big\rangle_{\q}\;}
+\end{equation}
+$p=0$ 是 $J$ 的绝对误差，$p=2$ 是 $\log|J|$（相对密度）误差，$p=3$ 对应每欧拉体积的密度变化（$\dd^3x=|J|\dd^3q$ 之后与 $\QE$ 的权重同阶）。它是 5.3 节 $k^2$ 度量的升级：散度部分加权、焦散处 $1/J^p$ 加权，纯局域、无沉积、$C^\infty$。\texttt{jacobian\_form} 实现，Jacobi 恒等式自检 $10^{-4}$。
+
+\textbf{(c) 但它没有 $\QE$ 的核。} 两个欧拉位置重合的粒子互换：$\QE$ 一阶为零（3.2 节自检），$\mathcal Q_J$ 不为零——互换使 $e$ 在 $\q$ 空间逐格振荡，$\partial e/\partial\q$ 巨大。"逐流约束更强"说的就是这件事，但\textbf{更强不等于更好}：多流区网络学不到的正是粒子标签，$\mathcal Q_J$ 把这部分不可避免的残差算作全额误差，网络无处安放它；$\QE$ 允许把它放进不改变密度的方向。所以预期：$\mathcal Q_J$ 在单流区（63\% 体积）和 $\QE$ 一样好，在多流区不如 $\QE$。这是可以直接测的（T3 的核分数分别用两种度量算）。
+
+\textbf{(d) 非线性的 $J$ 损失（匹配 $\log|J|$ 或其分位数）对 flow 和 CIC 损失同罪。} 它是 $\hat x_1$ 的非线性泛函与真值的比较，驻点是 5.5 节同一个式子（把 $\rho$ 换成 $F=\log|J|$ 或分位数映射），偏差 $\propto\lambda(1-t)$，ODE 不再输运 $p_0\to p_1$。"比 CIC 干净"只在光滑性上成立（CIC 密度是位置的连续分段线性函数，导数几乎处处存在，\texttt{cic\_gradient\_deposit} 就是它；不是"格点索引不可微"）；在与 flow matching 定理的关系上两者完全一样。对\textbf{回归}它是合法的、值得做的（Paper IV 式的折中：$J$ 分布对、标签错）；对 flow 只能作为合法二次型 $\mathcal Q_J$ 进损失，或权重 $t^p$ 只在 $t\to1$ 生效。
+
+\textbf{(e) 网格上的 $J$ 在多流区不是"逐流的 Jacobian"。} 相空间薄层在晕内折叠的尺度远小于 $h_f$，$h_f$ 尺度的 $\partial\Psi/\partial\q$ 测的是位移场的\textbf{粗糙度}（相邻粒子落到晕的两侧），不是某一支流的 $1/\rho$。"逐流给出每条流的贡献"在连续极限对，在 $h_f$ 网格上不成立。于是 $J$ 在单流区是干净的密度代理，在多流区是一个粗糙度统计量——它仍然分辨收缩和噪声（(a) 的数字就是在 53\% 多流的场上测的），但和欧拉密度的定量关系在那里丢失了。另外 $\log|J|$ 在焦散处奇异（$\dd\log|J|/\dd J=1/J$），分位数或 $\epsilon$ 正则化必须有。
+
+\textbf{结论。} 作为诊断量：对，立刻加。作为 flow 的损失：合法的是 $\mathcal Q_J$（拉格朗日、局域、$1/J^p$ 加权），它和 $\QE$ 的差别是有没有"标签"核，两者都实现了，应该在同一 $\lambda$ 标定下三方比较（拉格朗日 $L^2$ / $\QE$ / $\mathcal Q_J$），单流与多流分开报。非线性的分位数匹配留给回归。
+
+\subsection{source 的支撑}
+RUNLOG 2026-09-09 10:20：格点上的真实 IC octave 有 17\% 的横向分量（粒子晶格 aliasing，$z=99$ 时已在），纯纵向采样器的 source 不覆盖目标的支撑；$z=0$ 时 octave band 的横向分量 31\%。这影响的是生成模式的先验，\texttt{--octave-sampler full} 已经在用。它和欧拉问题的关系：先验分布与真实 octave 分布的任何差别都会通过 4.1 的定理反映为 $\Pd$ 的偏差，生成模式的 1.11 里有一部分来自这里（每分量功率对了，分量间的相关和非高斯性未必）。
+
+\section{立刻能做的检验（测试盒，numpy，不用训练）}
+
+\begin{enumerate}[leftmargin=2em]
+\item[T1] \textbf{抹平的构造性验证。} 对 baseline / flow / 回归各自的 $(a,\sigma_n)$（3.1 节表），构造 $\Psic+a\,d_{\rm true}$ 和 $\Psic+a\,d_{\rm true}+n$（$n$：octave 带限高斯场，每分量方差 $\sigma_n^2$），算 CIC 密度谱，与各模型实测的 $\Pd(k)/\Pd^{\rm true}$ 曲线叠画。预言：flow 的曲线被 $e^{-k^2\sigma_n^2}\times\Pd[\Psic+0.57d]$ 复现到 10\%；baseline 同理。
+\item[T2] \textbf{收缩的构造性验证。} $\Pd[\Psic+a\,d_{\rm true}]$，$a=0.73$，与回归的曲线叠画：预言随 $k$ 单调上升的超出；再算 $\delta>100$ 的质量分数。
+\item[T3] \textbf{残差的核分数。} 对每个训练好的模型，残差 $\varepsilon=\Psi'-\Psif$ 在真实欧拉位置处的 $\QE(\varepsilon)/\|\varepsilon\|^2$，除以同功率谱高斯场的同一比值。现在的模型预计 $\approx1$（残差是一般位置的）；用 \eqref{eq:loss} 训练后应显著 $<1$。
+\item[T4] \textbf{按 multi-stream 掩模拆开的密度谱。} 只沉积单流拉格朗日区域的粒子，算所有模型的 $\Pd/\Pd^{\rm true}$。预言：回归的超出消失（收缩只发生在多流区），flow 的不足缩小但不消失（噪声哪里都有）。
+\end{enumerate}
+然后是训练实验：\eqref{eq:loss} 的 $\lambda$ 扫描（flow 与回归都做，位置用 $\x_C$），加拉回输入；报告 octave band $(r,P/P)$、$\Pd/\Pd^{\rm true}(k)$、$r_\delta(k)$、$\delta>100$ 质量分数、T3 的核分数，全部按多流掩模拆分。判据不是 $r$，是 $\Pd$ 与核分数。
+
+\section{对方法表述的改变}
+
+\begin{itemize}[leftmargin=2em,nosep]
+\item 任何"功率正确"的陈述都要注明空间；octave band 的 $P/P=1$ 与欧拉 $\Pd/\Pd^{\rm true}=1$ 是不同的要求，后者才是科学上要的。
+\item 损失度量：拉格朗日 $L^2$ 加 $\lambda\QE$（欧拉位置取自粗场或插值，不取自目标），或纯拉格朗日的 $\lambda\mathcal Q_J$（5.7 节）。极小元不变；$\QE$ 把残差推进欧拉不可见的核里，$\mathcal Q_J$ 没有这个核。
+\item 输入加粗场欧拉密度（及潮汐）的拉回。
+\item 回归保留为 emulation 基线，可加 CIC 损失但要说明它换来的是"轮廓对、标签错"；生成任务只能用 flow。
+\item 评价指标加 $\Pd(k)$、$r_\delta(k)$、密度 PDF 尾巴、核分数、$J=\det(I+\partial\Psi/\partial\q)$ 的分位数，并按多流掩模拆分。
+\end{itemize}
+
+\end{document}

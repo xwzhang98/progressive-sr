@@ -110,3 +110,23 @@ Things deliberately left out of the toy (they are the next steps once the mechan
 are trusted on real 64/128 pairs): velocities, the scale/style scalar s_l across
 several transitions (the hook is the `s` input), patch cropping for 256^3+, rollout
 fine-tuning, the Eulerian CIC loss.
+
+## Eulerian density metric (`eulerian_metric.py`, notes/eulerian_power.pdf)
+
+The Lagrangian octave-band `P/P_true = 1` line and the Eulerian `P_delta/P_true = 1` line are
+different lines (they meet only at `r = 1`): a model's detail is `a d_true + n` with
+`sigma_n^2 = (P/P_true - r^2) Var(d)`, and independent noise damps the density power by exactly
+`exp(-k^2 sigma_n^2)` (checked on a multi-stream Zel'dovich field, `checks/smear_check.py`:
+formula 0.85 / 0.735 / 0.563 vs measured 0.83 / 0.70 / 0.50 at `k_Ny,c` for
+`sigma_n/h_f = 0.3 / 0.42 / 0.6`; band-limited noise damps the same as white noise).
+
+`python eulerian_metric.py` runs the self-test (mass conservation, the exact first-order CIC
+identity, and the kernel test: the cost of swapping two particles closer than 0.5/0.2/0.1 cell is
+0.25/0.041/0.016 of a random error of the same size). The quadratic form `eulerian_form(e, pos)`
+(positions from the coarse field or the interpolant, never from the target) and its purely
+Lagrangian counterpart `jacobian_form(e, psi_state, p, eps)` (Jacobi-linearised determinant,
+`dJ/J = div_x e`; Jacobi identity checked to 1e-4) can be added to the flow-matching / regression
+loss without changing the exact minimiser; the nonlinear `--cic-weight` / `--jac-weight` terms of
+`octave_flow_toy.py` are a different, biased object (notes §5.5, §5.7). `eulerian_inputs` gives
+the coarse Eulerian density pulled back to the Lagrangian grid as an extra input channel.
+`KICKOFF_STAGE6.md` has the constructive tests (T1–T4) and the training runs.
