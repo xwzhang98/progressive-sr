@@ -946,3 +946,38 @@ then 64->128 (6.4 h). All four evaluate with `--octave-sampler full` so the gene
 comparable; training is physical-coupling, so the sampler never enters it. Same PAUSE protocol.
 
 Waits for the GPU, so it starts when F2 finishes (~23:20) and should end ~07:15.
+
+## 2026-09-09 23:02 — F2 done: the full flow-vs-regression comparison at 64->128
+
+| | r | P/P | r^2 | coarse eps | rms | multi | single | gen P/P |
+|---|---|-----|-----|------------|-----|-------|--------|---------|
+| **32->64** baseline | 0.5551 | 1.4860 | 0.3081 | 1.08e-01 | 0.577 | 0.658 | 0.540 | - |
+| flow | 0.7220 | 0.9928 | 0.5213 | 5.64e-02 | 0.411 | 0.490 | 0.373 | **0.995** |
+| regression | 0.8192 | 0.6902 | 0.6711 | 3.13e-02 | 0.314 | 0.380 | 0.282 | **0.650** |
+| **64->128** baseline | 0.3940 | 1.2923 | 0.1552 | 1.25e-01 | 0.816 | 0.896 | 0.764 | - |
+| flow | 0.5234 | 1.0719 | 0.2739 | 9.09e-02 | 0.683 | 0.766 | 0.629 | **1.120** |
+| regression | 0.7160 | 0.5162 | 0.5127 | 4.52e-02 | 0.490 | 0.555 | 0.447 | **0.485** |
+
+(1500 steps; 32->64 at batch 2, 64->128 at batch 1. The generative column is with
+`--octave-sampler full` at both levels: the 32->64 models were re-evaluated on the CPU for
+this, since they had originally been scored with the longitudinal-only sampler.)
+
+**The separation intensifies one level down; it is not an artefact of the coarse 32->64 step.**
+The regression's r advantage grows from 0.097 to 0.193, and its power deficit deepens from
+0.690 to 0.516 while the flow stays on P/P = 1 at both levels (0.993, 1.072). At 64->128 the
+regression again lands exactly on the r^2 line (P/P 0.5162 against r^2 0.5127). For the
+progressive chain this points the wrong way for the regression: at 256^3 and 512^3 the split
+should be sharper still.
+
+**Generative mode is where it becomes decisive.** With the corrected sampler, the flow gives
+0.995 and 1.120 of the true octave power at the two levels while the regression gives 0.650 and
+**0.485** — at 64->128 it produces less than half the power, and it degrades with resolution.
+So the two statements that now have evidence at two independent levels are: *in emulator mode
+the regression is more accurate everywhere*, and *in generative mode the regression is not
+usable*, with both gaps widening as the transition gets finer.
+
+Still to check tonight: all four runs are being extended to 3000 steps
+(`runs/extend3k.sh`), because at 1500 the loss is still falling 10-13% over the last third and
+the finer level has further to go. Until that finishes, the level-to-level comparison of the
+*size of the network's gain* stays provisional; the r-vs-P/P split above is a much more robust
+feature and is unlikely to move.
