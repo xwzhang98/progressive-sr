@@ -43,14 +43,14 @@ run () {
   echo "########## $name end @$(date +%H:%M:%S)"
 }
 
-run C1_flow_cic1p0 runs/C_flow_cic1p0 --cic-weight 1.0
-paused
-run C2_flow_cic0p3 runs/C_flow_cic0p3 --cic-weight 0.3
-paused
-# Lagrangian-only competitor (owner approved): match asinh(det(I + dPsi/dq)) instead of the
-# CIC density. lambda calibrated the same way as the CIC pair: the jac term at the baseline is
-# 2.04 against the flow term's ~0.085 at convergence, so 0.04 makes them comparable and 0.012
-# makes the jac term ~30%.
+# CIC runs skipped at the owner's direction (2026-09-10): CIC is resolution-limited -- the
+# deposit kernel smooths at the grid scale, so structure inside a cell is invisible to it --
+# and the owner's earlier tests (the Paper-IV-style lag2eul loss) found it improves the power
+# spectrum but not the small scales. The Jacobian term has no deposit kernel, so it is the
+# one worth testing. --cic-weight stays in the script as an option; C1 was abandoned at step
+# ~1400 and its directory deleted.
+# Lagrangian-only term: match asinh(det(I + dPsi/dq)). lambda calibrated against the baseline
+# jac term (2.04) vs the flow term at convergence (~0.085): 0.04 comparable, 0.012 ~30%.
 run C3_flow_jac04  runs/C_flow_jac04  --jac-weight 0.04
 paused
 run C4_flow_jac012 runs/C_flow_jac012 --jac-weight 0.012

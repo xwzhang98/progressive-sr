@@ -1125,3 +1125,16 @@ Queue now: C1 cic 1.0 (resumes from step 1274) -> C2 cic 0.3 -> C3 jac 0.04 -> C
 3000 steps each, all `--octave-sampler full`, ~6 h total. The comparison at the end is
 four-way: no extra term / CIC x2 / jac x2, all against the same baseline and truth, on
 Lagrangian AND Eulerian metrics.
+
+## 2026-09-10 11:20 — CIC runs skipped at the owner's direction; straight to the Jacobian term
+
+Owner's reasoning, recorded: (1) CIC is resolution-limited — the deposit kernel smooths at the
+grid scale, so structure inside a cell is invisible to the loss no matter the weight; (2) their
+own earlier tests of a CIC-type loss (the Paper-IV lag2eul line) found it improves the power
+spectrum but not the small scales. The Jacobian term has no deposit kernel — J(q) is pointwise
+in q at the field's native resolution — so it does not share that ceiling, and it is the one
+worth spending GPU on.
+
+C1 (cic 1.0) abandoned at step ~1650 and deleted; C2 never started. `--cic-weight` remains in
+the script as an option. Queue is now C3 (jac 0.04) -> C4 (jac 0.012), 3000 steps each,
+~3.5 h total.
