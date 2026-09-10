@@ -1208,3 +1208,25 @@ Read with §5.5/§5.7d in mind, as instructed:
   Q_J having no relabelling kernel and the residual living exactly there.
 - J quantiles moved toward truth but remain narrower (printed above); mass>100 nearly
   unchanged (0.0407 vs truth 0.0524) — the 1-halo compactness deficit is not fixed by this term.
+
+## 2026-09-10 19:20 — Stage 7 Part 3: the admissible metrics are in the training script; queue launched
+
+`--loss-metric {lag,qe,qj}` (Q_E on the flow-matching error at coarse-field Eulerian positions;
+Q_J with the coarse field as state, p=2, eps=0.1), `--lambda-e` (auto-equalised at step 1 —
+measured on the real 32->64 box: L0_qe = 0.039, L0_qj = 0.0100, with baseline terms
+L_mse = 3.29e-1, L_qe = 8.37, L_qj = 33.0), `--euler-positions {coarse,interp}`,
+`--eulerian-inputs` (log(1+delta_c) pulled back to q; cin=13; flag rides in the checkpoint).
+The forms never see x1. Default path bit-identical (3.0888e-02); qe 1.94 s/step, qj 2.22 on MPS.
+
+Two bugs caught by the smoke tests, both mine:
+1. The eulerian-inputs channel patch targeted pre-wiener text and silently replaced nothing
+   (str.replace matches zero occurrences without error). Caught because the cin=13 smoke test
+   crashed; fixed with a direct edit. Lesson recorded: patch-by-string on a file someone else
+   updates must verify the count.
+2. --eval-only restored the checkpoint's eulerian_inputs flag AFTER the batcher and test box
+   were built, feeding a cin=13 model 12-channel inputs. Caught by running the eval-only smoke
+   to completion (the 'loaded weights' line alone had looked fine); flag now restored right
+   after argument parsing.
+
+Queue `runs/stage7_train.sh` (E_flow_qe, J_flow_qj, E_flow_qe_in, then E_reg_qe, J_reg_qj;
+3000 steps each, ~10 h) launched at commit HEAD; results.json records the hash.
