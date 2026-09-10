@@ -45,6 +45,7 @@ import torch.nn.functional as F
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import phase0_octaves as p0  # noqa: E402
+import eulerian_metric as em  # noqa: E402
 
 
 # ----------------------------------------------------------------------------
@@ -333,9 +334,10 @@ class Batcher:
     """Builds (x0, x1, cond) on the device from raw numpy fields, with augmentation."""
 
     def __init__(self, sc, data, rng, augment_on=True, growth=1.0, coupling="physical", source_filter="none",
-                 octave_transverse=False):
+                 octave_transverse=False, eulerian_inputs=False):
         self.sc, self.data, self.rng, self.aug, self.growth = sc, data, rng, augment_on, growth
         self.octave_transverse = octave_transverse
+        self.eulerian_inputs = eulerian_inputs
         self.coupling = coupling   # physical: x0 uses the true IC octave of x1; independent: a fresh sample
         self.source_filter = source_filter
 
@@ -361,6 +363,12 @@ class Batcher:
         x0 = (Pc_src + lin) / sc.hf
         x1 = df / sc.hf
         D = sc.gradients(Pc)                                       # dimensionless, from the unfiltered coarse run
+        if self.eulerian_inputs:
+            # log(1 + delta_c) at the coarse Eulerian position of q (notes Sec. 5.4): a scalar
+            # channel appended to the conditioning, computed AFTER augmentation so the
+            # cubic-group transform is inherited; a function of the coarse state only.
+            ei = em.eulerian_inputs((Pc / sc.hf).to(sc.fdev), sc.offset).to(D.device).to(D.dtype)
+            D = torch.cat([D, ei], dim=1)
         return x0, x1, Pc_src / sc.hf, D
 
     def sample(self, B):
@@ -554,6 +562,21 @@ def main():
                     help="sampled octave: curl-free only (default, reproduces earlier runs) or "
                          "plus the measured transverse component, which the lattice makes ~17% of the "
                          "octave variance on real data (generative mode only; emulator mode is unaffected)")
+    ap.add_argument("--loss-metric", type=str, default="lag", choices=["lag", "qe", "qj"],
+                    help="loss metric for the flow-matching error e = v - (x1 - x0): lag = plain "
+                         "MSE (default); qe adds lambda_e * Q_E(e) (Eulerian linearised form, "
+                         "notes 5.2 -- admissible, never sees x1); qj adds lambda_e * Q_J(e) "
+                         "(Jacobian form, notes 5.7b).")
+    ap.add_argument("--lambda-e", type=float, default=None,
+                    help="weight of the Q_E/Q_J term; default equalises the two terms at step 1 "
+                         "(the value used is recorded in results.json)")
+    ap.add_argument("--euler-positions", type=str, default="coarse", choices=["coarse", "interp"],
+                    help="where the form's positions/state come from: the prolonged coarse field "
+                         "(a function of C only) or the detached interpolant x_t")
+    ap.add_argument("--jac-p", type=float, default=2.0); ap.add_argument("--jac-eps", type=float, default=0.1)
+    ap.add_argument("--eulerian-inputs", action="store_true",
+                    help="append log(1+delta_c) at the coarse Eulerian position of q as an input "
+                         "channel (notes 5.4); cin becomes 13; recorded in the checkpoint")
     ap.add_argument("--cic-weight", type=float, default=0.0,
                     help="weight of an Eulerian CIC term added to the flow-matching loss: "
                          "MSE on log(1+delta) of the density built from the PREDICTED x1 "
@@ -600,6 +623,7 @@ def main():
     if args.source_filter == "wiener":
         sc.fit_source_filters(train, growth=args.growth)
     batcher = Batcher(sc, train, rng, augment_on=not args.no_augment, growth=args.growth, coupling=args.coupling, octave_transverse=(args.octave_sampler == "full"),
+                      eulerian_inputs=args.eulerian_inputs,
                       source_filter=args.source_filter)
     print(f"training coupling: {args.coupling}" + ("  (regression baseline, t=0 only)" if args.regression else ""))
     s_level = torch.zeros(args.batch, device=dev)  # scale/style scalar: constant for a single transition
@@ -616,8 +640,11 @@ def main():
     if args.eval_only:
         ckpt = torch.load(args.eval_only, map_location=dev)
         if isinstance(ckpt, dict) and "state_dict" in ckpt:
-            args.base = int(ckpt.get("base", args.base)); ckpt = ckpt["state_dict"]
-    model = UNet3D(cin=12, cout=3, base=args.base).to(dev)
+            args.base = int(ckpt.get("base", args.base))
+            if isinstance(ckpt.get("args"), dict):
+                args.eulerian_inputs = ckpt["args"].get("eulerian_inputs", args.eulerian_inputs)
+            ckpt = ckpt["state_dict"]
+    model = UNet3D(cin=12 + (1 if args.eulerian_inputs else 0), cout=3, base=args.base).to(dev)
     nparam = sum(p.numel() for p in model.parameters())
     print(f"model params: {nparam/1e6:.2f}M (base={args.base})")
     log = []
@@ -650,6 +677,27 @@ def main():
             xt = (1 - t)[:, None, None, None, None] * x0 + t[:, None, None, None, None] * x1
             v = model(net_input(xt, Pc, D), t, s_level[: args.batch])
             loss = F.mse_loss(v, x1 - x0)
+            if args.loss_metric != "lag":
+                # admissible metric on the flow-matching error itself (notes 5.1: any positive
+                # form in (x_t, C, t) leaves the minimiser u_t unchanged -- e never sees x1)
+                e = v - (x1 - x0)
+                state = (Pc if args.euler_positions == "coarse" else xt).detach()
+                if args.loss_metric == "qe":
+                    pos = em.eulerian_positions(state, args.offset)
+                    term = em.eulerian_form(e, pos)
+                else:
+                    term = em.jacobian_form(e, state, p=args.jac_p, eps=args.jac_eps,
+                                            fft_device=sc.fdev)
+                if args.lambda_e is None:
+                    args.lambda_e = float(loss.detach() / term.detach().clamp_min(1e-30))
+                    print(f"lambda-e auto-set to {args.lambda_e:.5g}  "
+                          f"(step-1 terms: L_mse={float(loss):.4e}, "
+                          f"L_{args.loss_metric}={float(term):.4e}; v=0 at init, so these are "
+                          f"the baseline terms)")
+                loss = loss + args.lambda_e * term
+                if step % max(1, args.steps // 20) == 0:
+                    print(f"        [{args.loss_metric}] L_mse={float(loss - args.lambda_e * term):.4e} "
+                          f"lambda*L_{args.loss_metric}={float(args.lambda_e * term):.4e}")
             if args.cic_weight > 0 or args.jac_weight > 0:
                 x1p = xt + (1 - t)[:, None, None, None, None] * v
                 if args.cic_weight > 0:
