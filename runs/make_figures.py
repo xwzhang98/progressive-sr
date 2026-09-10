@@ -76,6 +76,11 @@ def main():
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(8)))
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[100])
     ap.add_argument("--nsteps-sample", type=int, default=8)
+    ap.add_argument("--dis", default=None, help="real-data pattern with {N} and {seed}; without it, synthetic 2LPT")
+    ap.add_argument("--ic", default=None, help="real-data IC pattern with {N} and {seed}")
+    ap.add_argument("--growth", type=float, default=1.0, help="D(z_out)/D(z_ic) for real ICs")
+    ap.add_argument("--regression", action="store_true",
+                    help="the checkpoint was trained with --regression: evaluate with one Euler step")
     ap.add_argument("--slab", type=int, nargs=2, default=(24, 32), help="slab of fine cells to show")
     ap.add_argument("--device", default="cpu", help="cpu by default: leaves the GPU to a training job")
     ap.add_argument("--out", default="runs")
@@ -86,10 +91,14 @@ def main():
     torch.manual_seed(0)
 
     sc = oft.Scaffold(Nc, Nf, L, off, args.alpha, dev, window=args.window)
-    train = oft.make_synthetic(Nc, Nf, L, off, args.train_seeds, args.rms_delta, args.n_index, False)
-    test = oft.make_synthetic(Nc, Nf, L, off, args.test_seeds, args.rms_delta, args.n_index, False)
-    sc.fit_linear_power([it["ic_f"] for it in train])
-    b = oft.Batcher(sc, test, np.random.default_rng(0), augment_on=False)
+    if args.dis:
+        train = oft.load_real(args.dis, args.ic, Nc, Nf, args.train_seeds)
+        test = oft.load_real(args.dis, args.ic, Nc, Nf, args.test_seeds)
+    else:
+        train = oft.make_synthetic(Nc, Nf, L, off, args.train_seeds, args.rms_delta, args.n_index, False)
+        test = oft.make_synthetic(Nc, Nf, L, off, args.test_seeds, args.rms_delta, args.n_index, False)
+    sc.fit_linear_power([it["ic_f"] * args.growth for it in train])
+    b = oft.Batcher(sc, test, np.random.default_rng(0), augment_on=False, growth=args.growth)
     x0, x1, Pc, D = b.make(test, eta="true")
 
     ck = torch.load(args.ckpt, map_location="cpu")
@@ -101,10 +110,12 @@ def main():
     print(f"loaded {args.ckpt} (base={base}), window={args.window}, device={dev}")
 
     s = torch.zeros(1, device=dev)
-    xe = oft.sample_flow(model, x0, Pc, D, s, nsteps=args.nsteps_sample)
+    nst = 1 if args.regression else args.nsteps_sample
+    meth = "euler" if args.regression else "heun"
+    xe = oft.sample_flow(model, x0, Pc, D, s, nsteps=nst, method=meth)
     gen = torch.Generator().manual_seed(1)
     x0g, _, _, _ = b.make(test, eta="sample", gen=gen)
-    xg = oft.sample_flow(model, x0g, Pc, D, s, nsteps=args.nsteps_sample)
+    xg = oft.sample_flow(model, x0g, Pc, D, s, nsteps=nst, method=meth)
 
     hf = sc.hf
     C, B0, T = r"coarse  $P\Psi_c$", r"baseline $x_0$", r"truth $\Psi_f$"

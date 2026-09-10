@@ -981,3 +981,52 @@ Still to check tonight: all four runs are being extended to 3000 steps
 the finer level has further to go. Until that finishes, the level-to-level comparison of the
 *size of the network's gain* stays provisional; the r-vs-P/P split above is a much more robust
 feature and is unlikely to move.
+
+## 2026-09-10 06:46 — the 3000-step extensions finished; see runs/REPORT_6.md
+
+E1 32->64 flow 23:20-00:00, E2 32->64 reg 00:00-00:38, E3 64->128 flow 00:38-03:43,
+E4 64->128 reg 03:43-06:46. All resumed from the 1500-step train_state.pt.
+
+| | r | P/P | r^2 | eps | rms | multi | single | gen P/P | final loss |
+|---|---|-----|-----|-----|-----|-------|--------|---------|------------|
+| 32->64 baseline | 0.5551 | 1.4860 | 0.3081 | 1.08e-01 | 0.577 | 0.658 | 0.540 | - | - |
+| 32->64 flow 3000 | 0.7327 | 0.9759 | 0.5368 | 5.87e-02 | 0.409 | 0.491 | 0.370 | 0.9808 | 8.51e-02 |
+| 32->64 reg 3000 | 0.8289 | 0.7214 | 0.6871 | 3.00e-02 | 0.307 | 0.373 | 0.275 | 0.6797 | 7.91e-02 |
+| 64->128 baseline | 0.3940 | 1.2923 | 0.1552 | 1.25e-01 | 0.816 | 0.896 | 0.764 | - | - |
+| 64->128 flow 3000 | 0.5478 | 1.0703 | 0.3001 | 9.50e-02 | 0.679 | 0.764 | 0.624 | 1.1055 | 1.83e-01 |
+| 64->128 reg 3000 | 0.7293 | 0.5391 | 0.5319 | 4.31e-02 | 0.480 | 0.545 | 0.438 | 0.5096 | 2.15e-01 |
+
+Convergence settled: 1500 -> 3000 moves r by +0.010 to +0.024 and changes no ordering.
+
+### RETRACTED: "the network gains less one level down"
+
+Flagged last night as possibly an undertraining artefact. At 3000 steps the gain in r over
+baseline is flow +0.178 (32->64) vs +0.154 (64->128) — a 13% shrink — but regression
++0.274 vs **+0.335**, i.e. it GROWS one level down. The blanket claim was wrong. What is true:
+the relative rms improvement falls for both (flow -29% -> -17%, regression -47% -> -41%).
+
+### The Eulerian contradiction of last night is explained and tested
+
+Density statistics (CIC, mean 1) on the test box:
+
+| field | max | 99.9 pct | mass frac d>10 | d>100 |
+|-------|-----|----------|----------------|-------|
+| coarse | 2297 | 63.1 | 0.374 | 0.104 |
+| baseline | 1526 | 53.1 | 0.315 | 0.063 |
+| regression | **5619** | 71.4 | 0.428 | **0.178** |
+| flow | 2360 | 63.5 | 0.381 | **0.107** |
+| truth | 3480 | 77.5 | 0.433 | **0.152** |
+
+The regression OVER-concentrates the densest structures (peak 61% above truth, 17% too much
+mass above delta=100) and the flow UNDER-concentrates (30% too little). Mechanism: a
+conditional-mean displacement is too smooth in LAGRANGIAN space, so particles that should have
+dispersed inside a collapsed region stay together and the caustic is thinner and denser than it
+should be. Low Lagrangian octave power and high Eulerian small-scale power are the same fact.
+=> **the Lagrangian octave-band P/P is not sufficient to judge a model**; and at moderate
+overdensity (d>10) the regression is actually closer to truth than the flow (0.428 vs 0.381
+against 0.433). One test box, no window deconvolution or shot-noise subtraction: model-to-model
+ratios are meaningful, absolute numbers are not.
+
+Also added: `runs/make_figures.py` now takes `--dis/--ic/--growth/--regression` for real data
+(it was synthetic-only); `runs/fig_128_density.png` (density slices, full slab and zoom) and
+`runs/fig_128_density_spectra.png` (Eulerian density spectrum, ratio, r_delta) written.
