@@ -46,5 +46,13 @@ run () {
 run C1_flow_cic1p0 runs/C_flow_cic1p0 --cic-weight 1.0
 paused
 run C2_flow_cic0p3 runs/C_flow_cic0p3 --cic-weight 0.3
+paused
+# Lagrangian-only competitor (owner approved): match asinh(det(I + dPsi/dq)) instead of the
+# CIC density. lambda calibrated the same way as the CIC pair: the jac term at the baseline is
+# 2.04 against the flow term's ~0.085 at convergence, so 0.04 makes them comparable and 0.012
+# makes the jac term ~30%.
+run C3_flow_jac04  runs/C_flow_jac04  --jac-weight 0.04
+paused
+run C4_flow_jac012 runs/C_flow_jac012 --jac-weight 0.012
 
 echo "########## CIC TRAIN DONE @$(date +%Y-%m-%d\ %H:%M:%S)"

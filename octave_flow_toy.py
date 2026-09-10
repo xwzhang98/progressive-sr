@@ -428,6 +428,30 @@ def cic_loss(x1_pred, x1_true, offset):
                       torch.log1p(cic_density(x1_true, offset)))
 
 
+
+def jac_loss(sc, x1_pred, x1_true):
+    """Purely Lagrangian alternative to cic_loss: match the deformation determinant
+    J(q) = det(I + dPsi/dq), which in single-stream regions is exactly 1/rho_Eulerian at the
+    particle's position -- the Eulerian information, computed without ever leaving Lagrangian
+    coordinates (owner's request, RUNLOG 2026-09-10). Fields in units of h_f.
+
+    Derivatives are spectral (sc.gradients, consistent with every other derivative here); the
+    3x3 determinant is written out so it is differentiable everywhere and needs no linalg
+    backend. Compression: asinh(J) -- linear around J = 0, i.e. exactly at the caustics the
+    Lagrangian MSE cannot see, log-like in the void tail, smooth through the multi-stream sign
+    change (log|J| would diverge at every caustic). The compression is a knob, not a derivation.
+    """
+    lp = []
+    for x in (x1_pred, x1_true):
+        D = sc.gradients(x * sc.hf).reshape(x.shape[0], 3, 3, *x.shape[-3:])
+        a, b, c = D[:, 0, 0] + 1, D[:, 0, 1], D[:, 0, 2]
+        d, e, f = D[:, 1, 0], D[:, 1, 1] + 1, D[:, 1, 2]
+        g, h, i = D[:, 2, 0], D[:, 2, 1], D[:, 2, 2] + 1
+        J = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g)
+        lp.append(torch.asinh(J))
+    return F.mse_loss(lp[0], lp[1])
+
+
 def net_input(x_t, Pc, D):
     return torch.cat([x_t - Pc, D], dim=1)
 
@@ -535,6 +559,11 @@ def main():
                          "MSE on log(1+delta) of the density built from the PREDICTED x1 "
                          "(x_t + (1-t) v). 0 = off, which is the default and reproduces "
                          "earlier runs. See RUNLOG 2026-09-10 for why it exists.")
+    ap.add_argument("--jac-weight", type=float, default=0.0,
+                    help="weight of a Lagrangian deformation-determinant term: MSE on "
+                         "asinh(det(I + dPsi/dq)) of the predicted x1. Carries the same "
+                         "Eulerian information as --cic-weight in single-stream regions, but "
+                         "never leaves Lagrangian coordinates. 0 = off (default).")
     ap.add_argument("--regression", action="store_true",
                     help="direct one-step regression baseline: same network and inputs, trained at t=0 only "
                          "(predict x1 - x0 from x0), evaluated with a single Euler step")
@@ -621,9 +650,12 @@ def main():
             xt = (1 - t)[:, None, None, None, None] * x0 + t[:, None, None, None, None] * x1
             v = model(net_input(xt, Pc, D), t, s_level[: args.batch])
             loss = F.mse_loss(v, x1 - x0)
-            if args.cic_weight > 0:
+            if args.cic_weight > 0 or args.jac_weight > 0:
                 x1p = xt + (1 - t)[:, None, None, None, None] * v
-                loss = loss + args.cic_weight * cic_loss(x1p, x1, args.offset)
+                if args.cic_weight > 0:
+                    loss = loss + args.cic_weight * cic_loss(x1p, x1, args.offset)
+                if args.jac_weight > 0:
+                    loss = loss + args.jac_weight * jac_loss(sc, x1p, x1)
             opt.zero_grad(set_to_none=True); loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
             with torch.no_grad():
