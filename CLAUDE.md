@@ -72,7 +72,8 @@ property holds for the full nested state, only approximately for reduced states.
 - `README.md` — commands, expected numbers, output formats.
 - `KICKOFF_PROMPT.md` (Stages 0–4), `KICKOFF_STAGE3B.md` (review-driven experiments),
   `KICKOFF_STAGE5.md` (wiener source, multi-stream split), `KICKOFF_STAGE6.md` (Eulerian tests
-  T1–T4 and the Eulerian metric runs).
+  T1–T4 and the Eulerian metric runs), `KICKOFF_STAGE7.md` (eval_eulerian.py tooling while the
+  jac runs train; then the qe/qj runs).
 - `hpc/` — cluster checklist (`README.md`), SLURM templates (Phase 0; resumable training with
   `--max-seconds/--resume` self-resubmission), and `convert_snapshot.py` (MP-Gadget BigFile ->
   map2map cubes with the ID -> grid mapping and an IC-snapshot sanity check).
