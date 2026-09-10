@@ -1138,3 +1138,43 @@ worth spending GPU on.
 C1 (cic 1.0) abandoned at step ~1650 and deleted; C2 never started. `--cic-weight` remains in
 the script as an option. Queue is now C3 (jac 0.04) -> C4 (jac 0.012), 3000 steps each,
 ~3.5 h total.
+
+## 2026-09-10 12:30 — Stage 7 Part 1 (CPU): Eulerian evaluation + constructive tests; see runs/REPORT_7a.md
+
+- `python eulerian_metric.py`: mass 0, pullback 0, first-order 9.6e-3, kernel 0.245/0.038/0.009,
+  Jacobi 1.1e-4. scatter_add and linalg.det fine on torch 2.14 CPU. Nothing patched.
+- New `runs/eval_eulerian.py` (reads a run's stored args, rebuilds the test box, writes
+  <run>/eulerian.json+png). Validated: the 1500-step checkpoints reproduce REPORT_6 §4b
+  exactly (0.7136 / 1.9193 / 0.323 / 0.677); Gaussian kernel-fraction control gives 1.00.
+- Ran on R_flow_phys_3k, R_reg_phys_3k, F_flow_128_3k, F_reg_128_3k; tables in REPORT_7a.
+
+Headline outcomes of the four predictions:
+- T1 smearing: baseline CONFIRMED (constructed 0.341-0.343 vs measured 0.323 at 64->128);
+  flow REFUTED — measured 0.680 far above its independent-noise construction 0.407. The flow's
+  residual is not independent noise.
+- T2 shrinkage: REFUTED — every band-limited shrink gives a DEFICIT (0.54-0.66 at k_Ny,c),
+  regression measures 1.898; and the family is non-monotonic the wrong way (a 0.5->0.9 gives
+  0.660->0.542) because the constructions sit on the uncorrected coarse band: detail phased
+  with the TRUE coarse band decoheres against the coarse run's misplaced structures. The
+  coarse-band correction is a first-order actor in the Eulerian budget, absent from the note's
+  Sec. 3 model. "Coherent-only ~1 at a=0.57" also refuted (0.645).
+- T3 kernel fraction: REFUTED in an informative direction — E fractions 14-30, not ~1.
+  Mechanism isolated: with uniform-density positions the flow's 17.8 collapses to 1.14, so the
+  excess is the density weighting correlating with a residual that is coherent exactly where
+  particles pile up (coherent halo mislocation). Good news for Q_E: a large visible target.
+  Q_J fractions 0.24-0.58 (<1): the residual is smoother in gradients than Gaussian.
+- T4 single-stream deposit: REFUTED — the regression's excess barely moves (1.887 vs 1.898 at
+  64->128; 1.415 vs 1.435 at 32->64). Not localised in the coarse-mask multi-stream patches,
+  consistent with the coarse mask missing 56-62% of fine-level multi-stream cells.
+- J-quantile directions CONFIRMED (noise broadens -14.1/21.4, shrink narrows -5.4/12.8,
+  truth -6.8/15.2).
+
+Two incidental findings:
+- More Lagrangian training worsened the flow's Eulerian power (0.714 -> 0.680 at k_Ny,c from
+  1500 to 3000 steps) while octave r rose. The two objectives now measurably trade.
+- The corrected (full) octave sampler LOWERED generative Eulerian power: longitudinal sampler
+  1.109 at k_Ny,c (REPORT_6) vs full sampler 0.56-0.59. The sampled transverse component is
+  uncorrelated displacement noise -> pure Eulerian smearing, the same mechanism as T1. The
+  Lagrangian and Eulerian verdicts on the sampler fix point in opposite directions.
+
+C3 (jac 0.04) still training on the GPU throughout; nothing here touched the training script.
