@@ -602,6 +602,13 @@ def main():
     ap.add_argument("--out", type=str, default="octave_flow_out")
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
+    if args.eval_only:
+        # the input-channel layout must be known BEFORE the batcher and test box are built,
+        # so restore the flag from the checkpoint here (the weights are loaded again later)
+        _ck = torch.load(args.eval_only, map_location="cpu")
+        if isinstance(_ck, dict) and isinstance(_ck.get("args"), dict):
+            args.eulerian_inputs = _ck["args"].get("eulerian_inputs", args.eulerian_inputs)
+        del _ck
     os.makedirs(args.out, exist_ok=True)
     torch.manual_seed(args.seed); rng = np.random.default_rng(args.seed)
     dev = torch.device(args.device)
