@@ -932,3 +932,17 @@ tails carry a level dependence that no single dimensionless amplitude can absorb
 Operationally, for weight sharing: conditioning on sigma(h_l, z) looks sufficient for everything
 that sets the amplitude of the correction and the detail, which is what the loss is dominated
 by; a model that also has to match the tails will need something more.
+
+## 2026-09-09 20:10 — queued runs/extend3k.sh: 1500 -> 3000 steps on all four runs
+
+Reason: at 1500 steps none of the four is converged (loss still falling 10.4% / 12.8% over the
+last third), and the finer level -- the one that looked worse -- has further to go, so
+"the network gains less one level down" is not quotable yet.
+
+Uses `--resume`, so only the extra 1500 steps are paid for. Each run directory is copied to
+`<name>_3k` first with `results.json` removed, so the 1500-step numbers stay on disk alongside.
+Order: 32->64 first (1.5 h for the pair, and needed for the cross-level comparison to be fair),
+then 64->128 (6.4 h). All four evaluate with `--octave-sampler full` so the generative lines are
+comparable; training is physical-coupling, so the sampler never enters it. Same PAUSE protocol.
+
+Waits for the GPU, so it starts when F2 finishes (~23:20) and should end ~07:15.
