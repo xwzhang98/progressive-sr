@@ -82,6 +82,7 @@ def main():
         Nc, Nf, L, off, gr = args["nc"], args["nf"], args["box"], args["offset"], args["growth"]
         reg = args.get("regression", False)
         transv = args.get("octave_sampler", "longitudinal") == "full"
+        ein = bool(args.get("eulerian_inputs", False))
         dev = torch.device("cpu")
         torch.manual_seed(args.get("seed", 0))
         print(f"=== {rd}  ({Nc}->{Nf}, {'regression' if reg else 'flow'}, sampler "
@@ -95,12 +96,12 @@ def main():
             test = oft.make_synthetic(Nc, Nf, L, off, args["test_seeds"], args["rms_delta"], args["n_index"], args.get("dealias", False))
         sc.fit_linear_power([it["ic_f"] * gr for it in train])
         b = oft.Batcher(sc, test, np.random.default_rng(args.get("seed", 0)), augment_on=False,
-                        growth=gr, octave_transverse=transv)
+                        growth=gr, octave_transverse=transv, eulerian_inputs=ein)
         x0, x1, Pc, D = b.make(test, eta="true")
 
         ck = torch.load(os.path.join(rd, "model_ema.pt"), map_location="cpu")
         sd = ck["state_dict"] if "state_dict" in ck else ck
-        model = oft.UNet3D(cin=12, cout=3, base=int(ck.get("base", 24)))
+        model = oft.UNet3D(cin=12 + (1 if ein else 0), cout=3, base=int(ck.get("base", 24)))
         model.load_state_dict(sd); model.eval()
         s = torch.zeros(1)
         nst, meth = (1, "euler") if reg else (8, "heun")

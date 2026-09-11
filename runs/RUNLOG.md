@@ -1295,3 +1295,26 @@ For the record, the drift runs' Lagrangian numbers (3000 steps):
 Fix: lambda_e now saved in train_state.pt and restored on --resume (derived once, at the true
 step 1). Verified with a two-chunk CPU run: the second chunk prints "resumed" and no new
 lambda line. Clean queue relaunched from scratch for all five runs.
+
+## 2026-09-11 07:31 — Stage 7 Part 3 complete; see runs/REPORT_7.md
+
+Clean queue (pinned lambda) finished: E_flow_qe 23:22-01:00, J_flow_qj -02:38, E_flow_qe_in
+-04:16, E_reg_qe -05:51, J_reg_qj -07:31. eval_eulerian extended to read the eulerian_inputs
+flag from the checkpoint (it had cin=12 hardwired; the watcher's eval of E_flow_qe_in crashed
+on the shape mismatch and took the two regression evals down with it — rerun separately).
+
+Headline (full table and verdicts in REPORT_7):
+- **flow + Q_J (lambda 0.0100) improves BOTH sides at once**: Lagrangian r 0.7327 -> 0.7460
+  and rms 0.409 -> 0.393 (best flow values so far), Eulerian P_delta/P 0.963 -> 1.042 at
+  k_Ny,c, 0.777 -> 0.918 at 1.5, 0.551 -> 0.701 at 2. Cost: octave marginal P/P 0.976 -> 0.949.
+- **flow + Q_E hurts the Eulerian tail** (0.551 -> 0.418 at 2 k_Ny,c) and barely moves its own
+  kernel fraction (13.9 -> 12.3): expectation (a) refuted for qe, achieved by qj; (b) inverted
+  (qj wins everywhere, including single-stream T4 1.049 vs 0.913); the note's 5.7c kernel
+  ranking does not describe what limits these networks.
+- (c) confirmed: the regression's excess survives qe/qj (qe trims the tail 2.17 -> 1.78).
+- (d) refuted: --eulerian-inputs changes nothing measurable at this size.
+- **qj + GenIC-oracle sampler: generative P_delta/P = 1.036 / 0.887 / 0.683 at (1/1.5/2)
+  k_Ny,c, coinciding with emulator mode (1.042 / 0.918 / 0.701)**. Combined with last night's
+  oracle result, the owner's requirement — sampled P ratio = 1 with r < 1 — is met at k_Ny,c
+  at this level; the remaining tail deficit is shared with emulator mode (model residual).
+  Figure: runs/fig8_qj_closure.png.
