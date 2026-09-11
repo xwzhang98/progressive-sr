@@ -1276,3 +1276,22 @@ Consequences:
 2. --octave-sampler full (independent transverse) is the WORST of the three for Eulerian
    statistics despite the best Lagrangian marginal; it should not be the generative default on
    real data until replaced by a joint-statistics sampler.
+
+## 2026-09-10 23:40 — BUG in the first qe/qj runs: lambda_e drifted across resume chunks (fixed, reruns queued)
+
+`--lambda-e` is derived at step 1 (v = 0, so the two terms are the baseline terms) and was
+NOT persisted in train_state.pt: every 900-s chunk re-derived it from its own first batch with
+a partially trained model. E_flow_qe's lambda drifted 0.0442 -> 0.297 (6.7x) over the run;
+J_flow_qj's 0.0100 -> 0.0067. The affected runs are kept as `runs/E_flow_qe_drift`,
+`runs/J_flow_qj_drift`, `runs/E_flow_qe_in_drift` (the last killed mid-run) — they are
+"growing-lambda variants", not the designed experiment.
+
+For the record, the drift runs' Lagrangian numbers (3000 steps):
+- E_flow_qe_drift (lambda -> 0.297): r=0.6738 (down from 0.7327), P/P=1.113, rms=0.465,
+  gen P/P=1.146 — late-training over-weighted qe visibly degrades the Lagrangian side.
+- J_flow_qj_drift (lambda -> 0.0067): r=0.7464 (UP from 0.7327, the best flow r so far),
+  rms=0.392 (best), P/P=0.956, gen P/P=0.948 — promising even in drifted form.
+
+Fix: lambda_e now saved in train_state.pt and restored on --resume (derived once, at the true
+step 1). Verified with a two-chunk CPU run: the second chunk prints "resumed" and no new
+lambda line. Clean queue relaunched from scratch for all five runs.

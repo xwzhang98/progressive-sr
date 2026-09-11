@@ -668,13 +668,17 @@ def main():
             model.load_state_dict(st["model"]); opt.load_state_dict(st["opt"])
             ema = {k: v.to(dev) for k, v in st["ema"].items()}
             step0, log = st["step"], st["log"]
+            if args.lambda_e is None:
+                # keep the step-1 equalised value across chunks: re-deriving it mid-training
+                # (model no longer at v=0) let lambda drift 0.044 -> 0.297 in the first qe run
+                args.lambda_e = st.get("lambda_e", None)
             rng = np.random.default_rng(args.seed + step0); batcher.rng = rng
             torch.manual_seed(args.seed + step0)
             print(f"resumed from step {step0}")
 
         def save_state(step):
             torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), ema=ema, step=step, log=log,
-                            base=args.base), state_path)
+                            base=args.base, lambda_e=args.lambda_e), state_path)
 
         t0 = time.time()
         step = step0
