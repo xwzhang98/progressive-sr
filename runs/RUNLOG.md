@@ -1230,3 +1230,49 @@ Two bugs caught by the smoke tests, both mine:
 
 Queue `runs/stage7_train.sh` (E_flow_qe, J_flow_qj, E_flow_qe_in, then E_reg_qe, J_reg_qj;
 3000 steps each, ~10 h) launched at commit HEAD; results.json records the hash.
+
+## 2026-09-10 23:20 — the generative Eulerian gap IS the sampler; GenIC-oracle test
+
+Owner's directive: r < 1 is acceptable, but the generative (random-octave) P ratio must be 1,
+as the GAN series demonstrated. Overnight diagnostic on where the generative Eulerian deficit
+comes from.
+
+Mechanism hunts first, both REFUTED and recorded:
+- "transverse = super-Nyquist aliasing": GenIC only samples modes within its own grid, and a
+  per-mode ik delta/k^2 field is longitudinal at every grid k including the corners.
+- "transverse = a discrete gradient kernel, deterministic per mode": fitted the vector kernel
+  K_i(k) = Psi_hat_i/delta_hat on one GenIC seed and applied it to a second. Coarse band
+  transfers (residual 1.7e-2) but the octave does NOT (residual 8.0): the octave displacement
+  is not a per-mode function of the recorded ICDensity (which is likely a CIC-deposited
+  diagnostic, not the sampling field). PrePosition is the undisplaced lattice, not Zel-only —
+  a first test built on that assumption was discarded.
+
+So the empirical route: use MP-GenIC itself as the sampling oracle (random seed -> GenIC,
+0.2 s at 64^3 -> octave band -> growth). By construction this draws from the exact joint prior.
+Ladder on the SAME checkpoint (R_flow_phys_3k, 8 Heun), all CPU:
+
+| octave sampler | out Lag P/P | Eul P_d/P @kNyc | @1.5 | @2 |
+|---|---|---|---|---|
+| (D) longitudinal-only | 0.738 | 1.152 | 1.168 | 1.071 |
+| (C) independent transverse (current --octave-sampler full) | 0.996 | 0.860 | 0.617 | 0.387 |
+| (G) GenIC oracle, seed 7001 | 0.936 | 0.957 | 0.756 | 0.543 |
+| (G) GenIC oracle, seed 7002 | 0.937 | 0.962 | 0.761 | 0.547 |
+| (T) true octave (= emulator reference) | 0.954 | 0.963 | 0.777 | 0.551 |
+
+**With the true joint prior, generative mode equals emulator mode to 0.005 at every probed
+scale** (two independent oracle seeds agree). The entire generative-vs-emulator Eulerian gap
+was the sampler's wrong JOINT statistics: the independently-sampled transverse component is
+uncorrelated displacement noise (pure smearing), while the correct prior's "transverse" part
+is phase-locked and builds structure. Note the inversion AGAIN: (C) has the best Lagrangian
+marginal (0.996) and the worst Eulerian tail; (D) is Lagrangian-deficient but Eulerian
+OVERSHOOTS (1.15) — under-powered octave = less smearing = over-compaction.
+
+Consequences:
+1. The road to gen P_delta = 1 splits cleanly: (i) sample with the IC generator's own joint
+   statistics (oracle now; implementable as the generator's kernel later — the per-mode fit
+   says it is NOT a simple kernel, so this needs the generator's actual sampling recipe);
+   (ii) close the remaining model residual 0.96 -> 1, which is emulator-mode work — exactly
+   what the Q_E runs now training target.
+2. --octave-sampler full (independent transverse) is the WORST of the three for Eulerian
+   statistics despite the best Lagrangian marginal; it should not be the generative default on
+   real data until replaced by a joint-statistics sampler.
