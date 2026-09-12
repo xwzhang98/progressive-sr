@@ -1340,3 +1340,46 @@ The key comparisons when done:
   multi@32->64  vs J_flow_qj      (does sharing cost the small level anything?)
   multi@64->128 vs J_flow_128     (does sharing cost the big level anything?)
   J_flow_128    vs F_flow_128_3k  (does qj's Eulerian gain survive one level up?)
+
+## 2026-09-11 22:00 — owner's review: the aliasing verdict is OVERTURNED; corrections and follow-ups
+
+**CORRECTION of RUNLOG 2026-09-11 23:20 (the mechanism hunt).** The owner ran the controlled
+test I did not: fixing generator/seed/box/cosmology and varying only the generation mesh,
+16^3 particles get ~0 octave transverse power when Nmesh = Ngrid and 14.74% when
+Nmesh = 2 Ngrid. Verified in source: `genic/params.c:199` sets `Nmesh = 2*Ngrid` when the
+parameter is 0, and all our runs used the default (the logs read "Nmesh 0 # Default").
+So the transverse octave component IS aliasing — of the 2x-finer GENERATION mesh onto the
+particle lattice. My "refuted: super-Nyquist aliasing" entry tested the wrong hypothesis
+(super-Nyquist of the particle grid, generation assumed on-grid), and my per-mode kernel test
+failed because ICDensity is not the generation-mesh field. Both husks recorded there stand
+corrected by this entry. `zeldovich.c` additionally uses a finite-difference `diff_kernel`,
+but the owner's Nmesh=Ngrid -> ~0 result shows the mesh doubling is the dominant mechanism.
+
+**Consequences adopted:**
+- The refined-grid sampler (generate on 2N, subsample at the lattice) is back on the table as
+  the principled standalone prior; the GenIC oracle remains the reference.
+- The coarse level's own IC (Ngrid=Nc, Nmesh=2Nc) contains folded contributions from
+  [k_Ny,c, 2 k_Ny,c] — which IS the octave band. The coarse state may "know" part of the
+  octave at z_init already; the conditional prior p(eta | coarse) is then not the
+  unconditional Gaussian. To be measured (fixed white noise across levels).
+- P_n = A(1-r^2) P_true is the corrected residual-variance formula; it is what my T1 actually
+  used (it reproduces the note's Sec. 3.1 table), so no T1 number changes — but the
+  implication is now stated correctly: A = r^2 does NOT imply n = 0 or uniform halo shrinkage
+  by r; the regression's over-concentration still needs an independent structural diagnostic.
+- Q_J on a uniform background penalises the divergence only (tr[adj(I) de] = div e); purely
+  transverse errors sit in its null space. "Q_J = k^2 gradient penalty" claims are hereby
+  narrowed; divergence-vs-full-gradient is an ablation to run.
+- det(I+D) > 0 does not imply single-stream: sign(J) is a PARITY. Every "multistream fraction"
+  in this log and the reports is the negative-parity fraction of J on the stated grid; the
+  labels overstate what is measured. To be renamed at next code touch.
+- Evaluation debts acknowledged from the review: test seeds beyond the development box
+  (seed 8 was reused throughout; seed 9 is on disk and unused), deposit-grid convergence at
+  2 k_Ny,c (that probe sits AT the deposit grid's Nyquist), unified checkpoint-config restore,
+  and the missing chained 32->64->128 evaluation (the four-cell table:
+  specialist/shared x true-coarse/chained).
+
+Reading list logged for follow-up: Adaptive Flow Matching (ICML 2025; learned source),
+Spatiotemporal Pyramid Flow Matching (CVPR 2026; stage-to-stage distribution handoff), WSGM
+(cross-scale conditional normalisation), RFMSR 2026-07 / PixelIR 2026-08 (deterministic base +
+stochastic residual), Cosmo3DFlow (invertible wavelet representation; inverse task, not a
+baseline).
