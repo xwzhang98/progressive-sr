@@ -1318,3 +1318,25 @@ Headline (full table and verdicts in REPORT_7):
   oracle result, the owner's requirement — sampled P ratio = 1 with r < 1 — is met at k_Ny,c
   at this level; the remaining tail deficit is shared with emulator mode (model residual).
   Figure: runs/fig8_qj_closure.png.
+
+## 2026-09-11 20:50 — Stage 8: multi-transition weight sharing (owner approved) + the 128 qj reference
+
+Owner: "可以两个一起训练，32-64和64-128" — the CLAUDE.md ask-first item "multi-transition
+(style scalar) training" is hereby approved and started.
+
+`runs/multi_train.py` (new file; imports the frozen training script's classes): one
+UNet3D(cin=12) trained on BOTH transitions with alternating steps (32->64 at batch 2,
+64->128 at batch 1), style scalar s_l = ln(sigma_c) measured from each level's training ICs
+(0.6362 / 0.9392 — physical, extrapolates to future levels, unlike a level tag), qj loss with
+per-level lambda equalised at each level's own first step and pinned (0.0099 / 0.0076),
+--octave-sampler full, chunked/resumable (verified: resume does not re-derive lambdas).
+Per-level evaluation at the end -> results_32to64.json / results_64to128.json with Lagrangian
+and Eulerian numbers.
+
+Queue `runs/stage8_train.sh`: M_qj_multi (3000 steps/level, ~9 h) then J_flow_128
+(single-level qj at 64->128, 3000 steps, ~7 h — both the harder-level test of Stage 7's
+Eulerian gain and the apples-to-apples reference for the multi model's 128 side).
+The key comparisons when done:
+  multi@32->64  vs J_flow_qj      (does sharing cost the small level anything?)
+  multi@64->128 vs J_flow_128     (does sharing cost the big level anything?)
+  J_flow_128    vs F_flow_128_3k  (does qj's Eulerian gain survive one level up?)
