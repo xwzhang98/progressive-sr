@@ -22,6 +22,7 @@ Uses only eulerian_metric + the frozen training script's classes; edits nothing.
 
   python runs/eval_eulerian.py runs/F_flow_128_3k runs/F_reg_128_3k ...
 """
+import argparse
 import json
 import os
 import sys
@@ -40,11 +41,13 @@ import eulerian_metric as em         # noqa: E402
 QUANTS = (1, 5, 25, 50, 75, 95, 99)
 
 
-def density(psi_h, offset):
-    """CIC density (mean 1) of a displacement field in units of h, via eulerian_metric."""
-    pos = em.eulerian_positions(psi_h, offset)
+def density(psi_h, offset, factor=1):
+    """CIC density (mean 1) of a displacement field in units of h, via eulerian_metric.
+    factor > 1 deposits on a finer grid (positions rescaled), for measurement-convergence
+    checks near the deposit grid's own Nyquist."""
+    pos = em.eulerian_positions(psi_h, offset) * factor
     ones = psi_h.new_ones((psi_h.shape[0], 1) + psi_h.shape[-3:])
-    return em.cic_deposit(ones, pos, psi_h.shape[-1])
+    return em.cic_deposit(ones, pos, factor * psi_h.shape[-1])
 
 
 def dspec(g, delta):
@@ -76,9 +79,18 @@ def gauss_like(eps, g, rng):
 
 
 def main():
-    runs = [a for a in sys.argv[1:] if not a.startswith("-")]
+    ap = argparse.ArgumentParser()
+    ap.add_argument("runs", nargs="+")
+    ap.add_argument("--test-seed", type=int, default=None,
+                    help="override the stored test seed (e.g. 9 for the untouched box)")
+    ap.add_argument("--deposit-factor", type=int, default=1,
+                    help="deposit the density on (factor * Nf)^3 to check measurement convergence")
+    cli = ap.parse_args()
+    runs = cli.runs
     for rd in runs:
         args = json.load(open(os.path.join(rd, "results.json")))["args"]
+        if cli.test_seed is not None:
+            args = dict(args); args["test_seeds"] = [cli.test_seed]
         Nc, Nf, L, off, gr = args["nc"], args["nf"], args["box"], args["offset"], args["growth"]
         reg = args.get("regression", False)
         transv = args.get("octave_sampler", "longitudinal") == "full"
@@ -118,10 +130,11 @@ def main():
         kprobe = [knyc, 1.5 * knyc, 2.0 * knyc]
 
         # densities and spectra ------------------------------------------------
-        rho = {n: density(f, off)[0, 0] for n, f in fields.items()}
+        rho = {n: density(f, off, cli.deposit_factor)[0, 0] for n, f in fields.items()}
+        gd = p0.Grid(cli.deposit_factor * Nf, L) if cli.deposit_factor != 1 else g
         spec, Fd = {}, {}
         for n, r in rho.items():
-            k, P, F = dspec(g, (r / r.mean() - 1).numpy())
+            k, P, F = dspec(gd, (r / r.mean() - 1).numpy())
             spec[n] = (k, P); Fd[n] = F
         kt, Pt = spec["truth"]
         out = {"knyc": knyc, "kprobe": [float(x) for x in kprobe]}
@@ -129,7 +142,7 @@ def main():
             if n == "truth":
                 continue
             k, P = spec[n]
-            rr = rdelta(g, Fd[n], Fd["truth"])
+            rr = rdelta(gd, Fd[n], Fd["truth"])
             out[f"Pdelta_ratio_{n}"] = [float(P[np.argmin(abs(k - q))] / Pt[np.argmin(abs(k - q))]) for q in kprobe]
             out[f"rdelta_{n}"] = [float(rr[np.argmin(abs(k - q))]) for q in kprobe]
         for n, r in rho.items():
@@ -179,7 +192,9 @@ def main():
             k, P = t4[n]
             out[f"T4_Pdelta_ratio_{n}"] = [float(P[np.argmin(abs(k - q))] / PTt[np.argmin(abs(k - q))]) for q in kprobe[:2]]
 
-        with open(os.path.join(rd, "eulerian.json"), "w") as f:
+        suffix = "" if (cli.test_seed is None and cli.deposit_factor == 1) else \
+            f"_s{args['test_seeds'][0]}_d{cli.deposit_factor}"
+        with open(os.path.join(rd, f"eulerian{suffix}.json"), "w") as f:
             json.dump(out, f, indent=1)
 
         # print the headline row -------------------------------------------------
@@ -200,7 +215,7 @@ def main():
                 continue
             k, P = spec[n]
             ax[0].semilogx(k * 1000, P / np.maximum(Pt, 1e-30), color=cols[n], lw=1.5, label=n)
-            ax[1].semilogx(k * 1000, rdelta(g, Fd[n], Fd["truth"]), color=cols[n], lw=1.5, label=n)
+            ax[1].semilogx(k * 1000, rdelta(gd, Fd[n], Fd["truth"]), color=cols[n], lw=1.5, label=n)
         for a in ax[:2]:
             a.axvline(knyc * 1000, color="0.3", ls=":", lw=1); a.grid(alpha=.2)
             a.set_xlabel(r"$k$ [$h$/Mpc]")

@@ -1383,3 +1383,44 @@ Spatiotemporal Pyramid Flow Matching (CVPR 2026; stage-to-stage distribution han
 (cross-scale conditional normalisation), RFMSR 2026-07 / PixelIR 2026-08 (deterministic base +
 stochastic residual), Cosmo3DFlow (invertible wavelet representation; inverse task, not a
 baseline).
+
+## 2026-09-11 23:30 — review follow-ups executed (CPU, alongside Stage 8 training)
+
+### The sampler recipe and the cross-level prior (the review's top priority)
+
+TEST 1 — "generate at 2N, subsample" recipe: octave-band r(ic_64, subsample(ic_128)) =
+0.9622 / 0.9622 / 0.9623 over three seeds. The recipe class is right; the 0.04 shortfall and
+the higher transverse fraction (0.207 vs 0.170) of the subsampled field are the EXTRA fold
+layer (the 128 IC was itself generated at Nmesh=256). A faithful standalone sampler must
+generate at exactly 2N. Until then the GenIC oracle stays the generative prior.
+
+TEST 2 — the coarse IC already knows most of the folded octave: correlating the coarse IC's
+content beyond the shared band (rms 8.5 kpc/h, comparable to the octave's 9.7) with the
+alias-fold of the fine octave gives r = 0.8493 / 0.8499 / 0.8487 over three seeds.
+**At z_init the coarse state already carries r^2 ~ 72% of the folded octave.** "The octave is
+the only new randomness" is violated at the IC level by the generator's Nmesh = 2 Ngrid; the
+conditional prior p(eta | coarse) is not the unconditional Gaussian. This is also a likely
+part of the earlier cross-level IC non-nestedness (r = 0.76 at the coarse Nyquist).
+
+### Independent test box (seed 9, never used in development) — the headline ordering survives
+
+| 32->64, emulator P_delta/P at (1/1.5/2) k_Ny,c | dev box (s8) | fresh box (s9) |
+|---|---|---|
+| flow + qj | 1.042 / 0.918 / 0.701 | 0.959 / 0.796 / 0.610 |
+| flow lag-only | 0.963 / 0.777 / 0.551 | 0.921 / 0.730 / 0.539 |
+| regression | 1.435 / 1.866 / 2.170 | 1.231 / 1.385 / 1.552 |
+
+qj > lag at every k on both boxes; the regression's excess is on both. Absolute values carry
+~0.05-0.1 box-to-box scatter (the truth's own delta>100 mass differs: 0.0524 vs 0.0452), and
+the kernel fractions halve on the fresh box (13.8 -> 5.9) — dominated by a few dense objects.
+Headline claims must quote both boxes from now on. (eval_eulerian gained --test-seed and
+--deposit-factor; outputs suffixed eulerian_s<seed>_d<factor>.json.)
+
+### Deposit-grid convergence — the 2 k_Ny,c probe is fine
+
+Factor-2 deposit (128^3 grid for the 64^3 field) moves the probes by <= 2%:
+qj 1.049/0.935/0.707 vs 1.042/0.918/0.701; lag 0.969/0.792/0.558 vs 0.963/0.777/0.551.
+The ratio cancels the CIC window as assumed; the review's concern is checked and closed.
+
+Stage 8 (M_qj_multi) continues on the GPU throughout; J_flow_128 queued behind it.
+Next session: the four-cell table (specialist/shared x true-coarse/chained) once both land.
