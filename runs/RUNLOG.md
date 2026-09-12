@@ -1424,3 +1424,47 @@ The ratio cancels the CIC window as assumed; the review's concern is checked and
 
 Stage 8 (M_qj_multi) continues on the GPU throughout; J_flow_128 queued behind it.
 Next session: the four-cell table (specialist/shared x true-coarse/chained) once both land.
+
+## 2026-09-12 19:40 — Stage 8 results: the four-cell table (specialist/shared x direct/chained)
+
+M_qj_multi finished 05:35 (6000 alternating steps, lambdas 0.0099/0.0076, s_l = 0.636/0.939);
+J_flow_128 finished 12:10 (3000 steps, batch 1, lambda auto 0.0076). All emulator-mode
+numbers below use true octaves at both levels, test seed 8; "chained" replaces the 64->128
+step's coarse input with the 32->64 model's OUTPUT (runs/eval_chain.py, new).
+
+### Single-level, per level (with the lag-only references)
+
+| 32->64 | r | P/P | rms | gen P/P | Eul emu @(1,1.5,2)kNyc |
+|---|---|---|---|---|---|
+| specialist J_flow_qj | 0.7460 | 0.9488 | 0.393 | 0.9404 | 1.042 / 0.918 / 0.701 |
+| SHARED | 0.7416 | 0.9332 | 0.395 | 0.9232 | 0.995 / 0.862 / 0.655 |
+
+| 64->128 | r | P/P | rms | gen P/P | Eul emu @(1,1.5,2)kNyc |
+|---|---|---|---|---|---|
+| lag-only F_flow_128_3k | 0.5478 | 1.0703 | 0.679 | 1.1055 | 0.680 / 0.439 / 0.285 |
+| specialist J_flow_128 | 0.5671 | 0.9345 | 0.644 | 0.9546 | 0.894 / 0.603 / 0.395 |
+| SHARED | 0.6029 | 0.8356 | 0.602 | 0.8440 | 1.045 / 0.790 / 0.574 |
+
+### The four-cell table at 128 (the review's priority deliverable)
+
+| vs truth at 128 | true coarse (direct) | chained (generated coarse) |
+|---|---|---|
+| specialist | r=0.5671 rms=0.644 Eul 0.894/0.603/0.395 | r=0.5135 rms=0.872 Eul 0.780/0.409/0.205 |
+| SHARED | r=0.6029 rms=0.602 Eul 1.045/0.790/0.574 | r=0.5460 rms=0.848 Eul 0.842/0.497/0.272 |
+
+Findings:
+1. **qj's gains survive the level**: specialist-128 beats lag-only on every metric
+   (Eulerian at k_Ny,c 0.680 -> 0.894, mass>100 toward truth, r +0.02).
+2. **Weight sharing is free at the easy level and WINS at the hard level**: at matched
+   per-level steps the shared model beats the 128 specialist in BOTH columns (direct r +0.036,
+   Eulerian at k_Ny,c 1.045 vs 0.894; chained r 0.546 vs 0.514, Eulerian 0.842 vs 0.780).
+   Positive cross-level transfer, not just no-cost sharing. Cost: octave-band marginal P/P
+   (0.836 vs 0.935) and generative P/P (0.844) at 128 — the power-undershoot side-effect of
+   qj is larger for the shared model.
+3. **Chaining costs r ~0.05-0.06 and roughly halves the Eulerian tail per level**
+   (specialist 0.395 -> 0.205, shared 0.574 -> 0.272 at 2 k_Ny,c; rms +35-41%). Error
+   accumulation through the coarse pathway is the next structural target — the note's
+   rollout-fine-tuning item (CLAUDE.md ask-first) now has its motivating number.
+4. The shared chained cell — ONE operator, applied twice, 32->64->128 — reaches r=0.546,
+   Eul 0.842 at k_Ny,c against the direct specialist's 0.894: the progressive chain works,
+   with quantified degradation. This is the first end-to-end progressive result of the project.
