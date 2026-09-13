@@ -1468,3 +1468,27 @@ Findings:
 4. The shared chained cell — ONE operator, applied twice, 32->64->128 — reaches r=0.546,
    Eul 0.842 at k_Ny,c against the direct specialist's 0.894: the progressive chain works,
    with quantified degradation. This is the first end-to-end progressive result of the project.
+
+## 2026-09-12 20:30 — seed-9 four-cell table and the three-level figure
+
+Both approved items delivered while the Q_J ablations train.
+
+### The four-cell table on BOTH boxes (at 128, emulator octaves; s8 / s9)
+
+| | direct r | chained r | direct Eul@1 | chained Eul@1 | chained Eul@2 |
+|---|---|---|---|---|---|
+| specialist | 0.5671 / 0.5784 | 0.5135 / 0.5251 | 0.894 / 0.867 | 0.780 / 0.690 | 0.205 / 0.215 |
+| SHARED | 0.6029 / 0.6160 | 0.5460 / 0.5586 | 1.045 / 0.983 | 0.842 / 0.777 | 0.272 / 0.291 |
+
+Every Stage-8 conclusion survives the fresh box: the shared model beats the specialist in all
+four cells on both seeds (direct r +0.036/+0.038, chained r +0.033/+0.034), the chaining cost
+is stable (Delta r ~ -0.053 to -0.057, Eulerian tail roughly halves), and the box-to-box
+scatter of each cell is ~0.01 in r. The four-cell table is now double-boxed and quotable.
+
+runs/fig9_chain.png: one shared operator applied twice, 32^3 -> 64^3 -> 128^3, density slabs
+against the truths. The generated 64 is visually indistinguishable from truth-64; the
+generated 128 (built on the GENERATED 64) has the filament network in the right places with
+slightly muted small-scale contrast against truth-128 -- consistent with the measured
+r = 0.546-0.559 / Eul@1 ~ 0.8.
+
+Q_J ablations (AB_qj_p0 / p3 / div / grad) continue on the GPU, ~03:30 finish.

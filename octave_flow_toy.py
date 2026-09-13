@@ -460,6 +460,29 @@ def jac_loss(sc, x1_pred, x1_true):
     return F.mse_loss(lp[0], lp[1])
 
 
+
+def jac_form_variant(e, psi_state_over_h, form="adj", p=2.0, eps=0.1, fft_device=None):
+    """Ablation variants of the Q_J form (reviewer 2026-09-11; eulerian_metric itself is
+    not to be modified, so the variants live here):
+      adj  -- em.jacobian_form as is: |tr[adj(A) de]|^2 weighted, the Eulerian divergence
+              in the Lagrangian frame;
+      div  -- |tr de|^2 = |div_q e|^2 with the same caustic weight: what Q_J degenerates to
+              on a uniform background (A = I). Pure transverse errors are in its null space
+              too, but it drops the state-geometry coupling;
+      grad -- sum_ij |d_i e_j|^2 with the same caustic weight: the full gradient penalty,
+              no null space at all.
+    All share the weight (J_state^2 + eps^2)^(-p/2); J always comes from the state."""
+    if form == "adj":
+        return em.jacobian_form(e, psi_state_over_h, p=p, eps=eps, fft_device=fft_device)
+    J, _ = em.jacobian_and_adjugate(psi_state_over_h, fft_device)
+    dE = em.spectral_gradient(e, fft_device)                    # (B,3,C,N,N,N), [i,j]=d_i e_j
+    w = (J ** 2 + eps ** 2) ** (-p / 2)
+    if form == "div":
+        div = dE[:, 0, 0] + dE[:, 1, 1] + dE[:, 2, 2]
+        return (div ** 2 * w).mean()
+    return ((dE ** 2).sum(dim=(1, 2)) * w).mean()               # grad
+
+
 def net_input(x_t, Pc, D):
     return torch.cat([x_t - Pc, D], dim=1)
 
@@ -574,6 +597,9 @@ def main():
                     help="where the form's positions/state come from: the prolonged coarse field "
                          "(a function of C only) or the detached interpolant x_t")
     ap.add_argument("--jac-p", type=float, default=2.0); ap.add_argument("--jac-eps", type=float, default=0.1)
+    ap.add_argument("--jac-form", type=str, default="adj", choices=["adj", "div", "grad"],
+                    help="Q_J variant for --loss-metric qj (ablation): adj = the full form, "
+                         "div = divergence-only, grad = full gradient (no null space)")
     ap.add_argument("--eulerian-inputs", action="store_true",
                     help="append log(1+delta_c) at the coarse Eulerian position of q as an input "
                          "channel (notes 5.4); cin becomes 13; recorded in the checkpoint")
@@ -697,8 +723,8 @@ def main():
                     pos = em.eulerian_positions(state, args.offset)
                     term = em.eulerian_form(e, pos)
                 else:
-                    term = em.jacobian_form(e, state, p=args.jac_p, eps=args.jac_eps,
-                                            fft_device=sc.fdev)
+                    term = jac_form_variant(e, state, form=args.jac_form, p=args.jac_p,
+                                            eps=args.jac_eps, fft_device=sc.fdev)
                 if args.lambda_e is None:
                     args.lambda_e = float(loss.detach() / term.detach().clamp_min(1e-30))
                     print(f"lambda-e auto-set to {args.lambda_e:.5g}  "
