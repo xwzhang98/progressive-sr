@@ -87,6 +87,9 @@ def main():
     ap.add_argument("--pair", choices=["specialist", "shared"], required=True)
     ap.add_argument("--test-seed", type=int, default=8)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--ckpt-b", default=None,
+                    help="override the step-2 (64->128) checkpoint, e.g. a rollout-fine-tuned "
+                         "copy of the shared model; the upstream stays the pair's default")
     args = ap.parse_args()
 
     if args.pair == "specialist":
@@ -97,6 +100,8 @@ def main():
         mA, ckA = load_model("runs/M_qj_multi/model_ema.pt")
         mB = mA
         sA, sB = ckA["s_values"]
+    if args.ckpt_b:
+        mB, _ = load_model(args.ckpt_b)
 
     scA, teA = build_level(32, 64, args.test_seed)
     scB, teB = build_level(64, 128, args.test_seed)

@@ -1524,3 +1524,62 @@ Ranking: adj p=3 >= adj p=2 > div > adj p=0 > grad > lag-only. The full Q_J desi
 validated component-wise; every simplification loses something. Keep adj p=2 as the default
 (p=3 optional). Reviewer item 3 is closed for this level; the cross-level check exists via
 J_flow_128 (adj p=2, Eulerian 0.894 at k_Ny,c vs lag-only 0.680).
+
+## 2026-09-13 12:30 — owner's second review absorbed; nsteps convergence; two-box ablations; Stage 10 launched
+
+Owner's review points adopted:
+- The four-cell headline is now quoted as TWO-BOX AVERAGES (their numbers confirmed mine).
+- The key chaining clue is on record: Lagrangian octave power is nearly unchanged by chaining
+  (0.856 -> 0.850) while the density tail halves (0.579 -> 0.282) — the chain problem is
+  coarse-error/detail coupling, NOT displacement power. No single-mechanism attribution yet.
+- Boundary stated: everything chained so far is the EMULATOR chain (true octaves at both
+  levels). The generative chain and 128->256 extrapolation are unverified.
+- My "slightly muted small-scale contrast" description of fig9 is retracted as an
+  understatement: the chained tail is ~28% of the true density power at 2 k_Ny,c.
+- Easy-level verdict refined: shared vs specialist at 32->64 is s8-weaker/s9-stronger,
+  i.e. "roughly equal on the easy level, benefits on the hard level".
+
+### ODE integration-step convergence (fixed J_flow_qj checkpoint, seed 8)
+
+| nsteps | Lag r | Eul @1 | @1.5 | @2 |
+|---|---|---|---|---|
+| 1 | 0.7756 | 1.235 | 1.347 | 1.362 |
+| 2 | 0.7667 | 1.127 | 1.106 | 0.970 |
+| 4 | 0.7518 | 1.054 | 0.951 | 0.750 |
+| 8 | 0.7460 | 1.042 | 0.918 | 0.701 |
+| 16 | 0.7435 | 1.042 | 0.909 | 0.687 |
+
+n=8 vs n=16 differ by <= 0.014: the reported numbers are integration-converged. Notable: the
+qj model's ONE-step evaluation is density-EXCESSIVE (1.24-1.36, regression-like), converging
+from above — opposite sign to the plain flow's one-step deficit.
+
+### Ablations at TWO-BOX averages (s8/s9), Eulerian emulator
+
+| variant | @1 avg | @2 avg |
+|---|---|---|
+| lag-only | 0.942 | 0.545 |
+| adj p=0 | 0.973 | 0.593 |
+| grad p=2 | 0.962 | 0.620 |
+| adj p=2 | 1.000 | 0.656 |
+| adj p=3 | 1.009 | 0.665 |
+| div p=2 | 0.979 | 0.671 |
+
+Refinement of yesterday's single-box verdicts: the caustic weight (p >= 2) remains the clear
+winner over p=0, and grad remains the weakest weighted form at @1 — but div is TIED with adj
+at @2 (0.671 vs 0.656; the 0.03 adj advantage lives at @1 only). With ~0.05 box scatter, the
+honest ranking is {adj p2/p3, div} > {p0, grad} > lag-only, and adj p=2 stays the default.
+
+### Stage 10 queued (both owner-approved)
+
+- RFT_mix50: rollout fine-tuning per the owner's protocol — frozen upstream (M_qj_multi at
+  32->64) generates predicted 64^3 for all training boxes; the downstream level fine-tunes
+  from the shared checkpoint with P(predicted coarse)=0.5, target/octave always the true 128
+  of the same realization; 1500 steps, LR 1e-4. Limitation noted in-code: augmentation is off
+  (the predicted-coarse copy must stay aligned with its target).
+- RFT_mix0: the control — identical fine-tuning with true coarse only, to separate "mixing
+  helps" from "extra low-LR steps help".
+- RF_resflow: frozen R_reg_phys_3k as deterministic base + a fresh residual flow from
+  x0' = B to the truth, qj loss, 3000 steps. The base removes 77% of the squared path
+  (step-1 L_mse 0.076 vs 0.33 from the physical source).
+- eval_chain gained --ckpt-b so the fine-tuned downstream can be chained under the frozen
+  upstream. ~9 h total; evaluation plan: the four-cell row for each FT variant on both boxes.
