@@ -1492,3 +1492,35 @@ slightly muted small-scale contrast against truth-128 -- consistent with the mea
 r = 0.546-0.559 / Eul@1 ~ 0.8.
 
 Q_J ablations (AB_qj_p0 / p3 / div / grad) continue on the GPU, ~03:30 finish.
+
+## 2026-09-13 03:00 — Q_J ablations complete: every component of the full form earns its place
+
+Four variants at 32->64, 3000 steps, lambda auto-equalised per form, vs J_flow_qj (adj, p=2)
+and the lag-only reference. Full table (Lagrangian | Eulerian emulator | generative):
+
+| run | r | P/P | rms | gen P/P | Eul @1 | @1.5 | @2 | gen Eul @1 | m>100 |
+|---|---|---|---|---|---|---|---|---|---|
+| lag-only | 0.7327 | 0.9759 | 0.409 | 0.9808 | 0.963 | 0.777 | 0.551 | 0.860 | 0.0401 |
+| **adj p=2** | **0.7460** | 0.9488 | **0.393** | 0.9404 | 1.042 | 0.918 | 0.701 | 0.969 | 0.0422 |
+| adj p=0 | 0.7417 | 0.9674 | 0.395 | 0.9576 | 1.000 | 0.844 | 0.613 | 0.924 | 0.0412 |
+| **adj p=3** | 0.7452 | 0.9555 | 0.394 | 0.9471 | **1.048** | **0.923** | **0.710** | **0.983** | 0.0428 |
+| div p=2 | 0.7390 | 0.9608 | 0.399 | 0.9577 | 1.009 | 0.889 | 0.703 | 0.925 | 0.0417 |
+| grad p=2 | 0.7373 | 0.9690 | 0.402 | 0.9628 | 0.994 | 0.855 | 0.645 | 0.897 | 0.0406 |
+
+Verdicts (Eulerian tail is the discriminator):
+1. **The caustic weight matters and saturates by p=2**: p=0 loses 0.07-0.09 across the tail
+   (0.613 vs 0.701 at 2 k_Ny,c); p=3 is marginally better than p=2 (+0.01) — not worth a
+   default change, but p in [2,3] is the plateau.
+2. **The adj(A) state-geometry coupling earns ~0.03**: div (same weight, A -> I) sits at
+   1.009/0.889 against adj's 1.042/0.918 at (1, 1.5) k_Ny,c.
+3. **The full gradient is WORSE than the divergence** (0.994/0.855/0.645): the reviewer's
+   null-space concern — transverse errors escaping div's kernel — does not pay off in
+   practice; penalising transverse gradient components spends capacity on error directions
+   that are not the harmful ones. The harmful residual is divergence-like.
+4. Lagrangian numbers are nearly flat across variants (r 0.737-0.746); the ranking lives
+   entirely in the Eulerian tail, one more instance of the two-space split.
+
+Ranking: adj p=3 >= adj p=2 > div > adj p=0 > grad > lag-only. The full Q_J design is
+validated component-wise; every simplification loses something. Keep adj p=2 as the default
+(p=3 optional). Reviewer item 3 is closed for this level; the cross-level check exists via
+J_flow_128 (adj p=2, Eulerian 0.894 at k_Ny,c vs lag-only 0.680).
