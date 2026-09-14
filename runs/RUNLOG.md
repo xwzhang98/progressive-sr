@@ -1607,3 +1607,21 @@ Verdicts:
    levels training during FT with mixing only at the 128 level, fewer steps / lower LR.
 
 RF_resflow (learned base + residual flow) training since 20:00, ~22:15 finish.
+
+## 2026-09-14 13:20 — RF_resflow evaluated on both boxes: the project's best model; REPORT_8
+
+RF_resflow finished 2026-09-13 22:05 (3000 steps, lambda auto 0.0159). Seed-9 evaluation via
+a scratchpad script (base = frozen R_reg_phys_3k, flow from x0' = B to truth, 8 Heun):
+
+| | Lag r (s8/s9) | Lag P/P | Eul @1 | @1.5 | @2 |
+|---|---|---|---|---|---|
+| base | .829/.842 | .721/.745 | 1.435/1.231 | 1.866/1.385 | 2.170/1.552 |
+| resflow emulator | .795/.806 | .996/1.029 | 1.082/1.006 | 1.029/0.889 | 0.844/0.726 |
+| resflow generative | .190/.204 | .947/.976 | 1.106/0.997 | 1.046/0.866 | 0.879/0.704 |
+
+Two-box emulator Eulerian 1.044/0.959/0.785 vs J_flow_qj's 1.000/0.878/0.656, with r 0.80 vs
+0.75: better at every probe on both boxes. The base's Eulerian excess is repaired from above
+(2.17 -> 0.84), not smeared from below; generative mode ~1 at k_Ny,c with the independent-T
+sampler. The Stage 5-7 accuracy/power trade-off is substantially dissolved by the two-stage
+design. Caveats: single level, not chained, 2x parameters (not parameter-matched), rms 0.353
+between base 0.307 and single-flow 0.393. runs/REPORT_8.md written.
