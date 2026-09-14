@@ -1583,3 +1583,27 @@ honest ranking is {adj p2/p3, div} > {p0, grad} > lag-only, and adj p=2 stays th
   (step-1 L_mse 0.076 vs 0.33 from the physical source).
 - eval_chain gained --ckpt-b so the fine-tuned downstream can be chained under the frozen
   upstream. ~9 h total; evaluation plan: the four-cell row for each FT variant on both boxes.
+
+## 2026-09-13 20:20 — rollout fine-tuning round 1: the control isolates the signal
+
+Three-row table at 128, seed 8 (emulator octaves; direct = true coarse, chained = generated):
+
+| model | direct r / Eul@1 / @2 | chained r / Eul@1 / @2 |
+|---|---|---|
+| shared, no FT | 0.6029 / 1.045 / 0.574 | 0.5460 / 0.842 / 0.272 |
+| + FT mix0 (control) | 0.5839 / 0.839 / 0.420 | 0.5276 / 0.697 / 0.198 |
+| + FT mix50 | 0.5831 / 0.893 / 0.442 | 0.5373 / 0.760 / 0.224 |
+
+Verdicts:
+1. **The fine-tuning REGIME itself is damaging**: the true-coarse-only control loses as much
+   as or more than the mixed run everywhere (direct Eul@1 1.045 -> 0.839). Causes on the
+   table: augmentation off (a documented limitation of round 1 — the predicted-coarse copy
+   must transform with its target and the minimal driver skipped that), single-level
+   fine-tuning (forgetting the 32->64 half), batch 1, 1500 steps of LR 1e-4 over 8 boxes.
+2. **Within the regime, the mixing HELPS on every single number** (mix50 > mix0: chained
+   Eul@1 0.760 vs 0.697, chained r 0.537 vs 0.528, and even direct 0.893 vs 0.839). The
+   owner's protocol signal is real and positive; round 1 buried it under regime damage.
+3. Round 2 spec (not launched): paired augmentation for (predicted coarse, target), keep BOTH
+   levels training during FT with mixing only at the 128 level, fewer steps / lower LR.
+
+RF_resflow (learned base + residual flow) training since 20:00, ~22:15 finish.
