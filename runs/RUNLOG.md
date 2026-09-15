@@ -1660,3 +1660,29 @@ conditional prior is still the right target), but the sensitivity is an order sm
 paper-worthy robustness property of the architecture.
 
 RF_resflow_128 training continues overnight (~06:30).
+
+## 2026-09-15 14:10 — RF_resflow_128: the two-stage design holds at the hard level, double-boxed
+
+RF_resflow_128 (base = frozen F_reg_128_3k, residual flow, 3000 steps, batch 1, lambda auto
+0.0121) finished 05:43. Both boxes:
+
+| 64->128 | r (s8/s9) | Lag P/P | Eul @1 | @1.5 | @2 |
+|---|---|---|---|---|---|
+| base (= F_reg_128_3k) | .729/.741 | .539/.568 | 1.898/1.607 | 2.298/2.088 | 2.627/2.549 |
+| **resflow emulator** | **.677/.689** | .970/1.023 | **1.018/0.991** | 0.849/0.830 | **0.636/0.605** |
+| resflow generative | .239/.245 | .931/.987 | 1.007/0.987 | 0.835/0.824 | 0.622/0.599 |
+
+Against the 64->128 field (two-box emulator Eulerian averages):
+lag-only 0.647/0.421/0.271 | qj specialist 0.881/0.612/0.399 | shared 1.014/0.792/0.579 |
+**resflow 1.005/0.840/0.621** — best r by a wide margin (0.68 vs shared's 0.61, single-stage
+flows' 0.55-0.57) AND the best Eulerian tail, with the octave marginal at ~1. The base's
+2.6x density excess is repaired from above, exactly as at 32->64.
+
+Prior robustness holds at this level too: generative == emulator to 0.01-0.02 at every probe
+(with the independent-T sampler). Parameter note stands: 3.11M combined.
+
+The two-stage residual-flow design is now the default-operator candidate for the progressive
+chain: better than every single-stage variant at both levels, on both boxes, in both modes.
+Next (not launched): its chain row (specialist resflow 32->64 exists, resflow-128 exists —
+eval_chain needs a resflow pair mode), a shared/cross-scale version, rollout round 2 on the
+resflow pair.
