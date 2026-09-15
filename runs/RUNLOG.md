@@ -1625,3 +1625,21 @@ Two-box emulator Eulerian 1.044/0.959/0.785 vs J_flow_qj's 1.000/0.878/0.656, wi
 sampler. The Stage 5-7 accuracy/power trade-off is substantially dissolved by the two-stage
 design. Caveats: single level, not chained, 2x parameters (not parameter-matched), rms 0.353
 between base 0.307 and single-flow 0.393. runs/REPORT_8.md written.
+
+## 2026-09-14 21:20 — owner verified the residual flow; Stage 11 launched (approved 1+2)
+
+Owner's independent verification recorded: two-box density ratios reproduced (emulator
+under-power at 2 k_Ny,c shrinks 34% -> 21%, generative 48% -> 21%), r_delta also improves
+(0.905 -> 0.919 at the top probe, seed 8), 16-step integration keeps the gain (0.844 ->
+0.833). Boundaries kept on the record: (1) mass in high-density cells still 13%/19% low on
+the two boxes — physical statistics not fully recovered; (2) single level only, no 64->128
+or chain for the residual flow, no new rollout results; (3) the prior question stands —
+independent-T sampler throughout, power improvement does not prove the conditional prior.
+Parameter accounting for all comparisons: base+flow = 3.11M vs 1.56M single-stage.
+
+Launched:
+- runs/stage11_train.sh -> RF_resflow_128: base = frozen F_reg_128_3k, residual flow at
+  64->128, 3000 steps, batch 1 (~9 h; resflow_train.py gained --nc/--nf/--base-ckpt/--batch).
+- CPU: oracle-prior generative evaluation on the existing RF_resflow (32->64) — does the
+  exact joint prior push the resflow's generative Eulerian to its emulator level, as it did
+  for the single-stage flow?

@@ -40,6 +40,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", type=int, default=3000)
     ap.add_argument("--batch", type=int, default=2)
+    ap.add_argument("--nc", type=int, default=32); ap.add_argument("--nf", type=int, default=64)
+    ap.add_argument("--base-ckpt", type=str, default="runs/R_reg_phys_3k/model_ema.pt",
+                    help="frozen deterministic base (a --regression checkpoint for this level)")
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--device", type=str, default="mps")
     ap.add_argument("--out", type=str, required=True)
@@ -51,14 +54,14 @@ def main():
     torch.manual_seed(args.seed)
     dev = torch.device(args.device)
 
-    sc = oft.Scaffold(32, 64, L, OFF, 1.0, dev, window="cube")
-    tr = oft.load_real(DIS, IC, 32, 64, list(range(8)))
-    te = oft.load_real(DIS, IC, 32, 64, [8])
+    sc = oft.Scaffold(args.nc, args.nf, L, OFF, 1.0, dev, window="cube")
+    tr = oft.load_real(DIS, IC, args.nc, args.nf, list(range(8)))
+    te = oft.load_real(DIS, IC, args.nc, args.nf, [8])
     sc.fit_linear_power([it["ic_f"] * GR for it in tr])
     rng = np.random.default_rng(args.seed)
     ba = oft.Batcher(sc, tr, rng, augment_on=True, growth=GR, octave_transverse=True)
 
-    ckb = torch.load("runs/R_reg_phys_3k/model_ema.pt", map_location="cpu")
+    ckb = torch.load(args.base_ckpt, map_location="cpu")
     baseM = oft.UNet3D(cin=12, cout=3, base=int(ckb.get("base", 24)))
     baseM.load_state_dict(ckb["state_dict"]); baseM.eval(); baseM.to(dev)
     for p_ in baseM.parameters():
