@@ -1737,3 +1737,17 @@ is chosen and use X - B as the velocity target (the round-1 driver started from 
 source and must not be reused as-is); (3) the shared resflow + a same-base/second-stage-
 REGRESSION control. Literature: CorrDiff/AFM (ensemble calibration), PixelIR/RFMSR (controls
 first, distillation later), MP-PDE (rollout stability as input-distribution shift).
+
+## 2026-09-15 — Stage 12 launched: rollout pilot round 2 on the resflow pair (owner's spec)
+
+runs/rollout_ft2.py implements the corrected protocol: frozen upstream resflow chain AND
+frozen base128; only the downstream residual flow is tuned (warm start RF_resflow_128);
+the base is re-evaluated on whichever coarse enters the batch and the velocity target is
+X - B (round 1's physical-source pipeline is NOT reused); paired cubic-group augmentation of
+(chosen coarse, target, IC); lambda reused from RF_resflow_128 (0.01214), 800 steps at 5e-5.
+Queue: RFT2_mix50 then RFT2_mix0 (control); rows for the report are no-FT / mix0 / mix50.
+eval_chain gained --flow-b (evaluate a tuned downstream flow under the frozen upstream) and
+now reports r_delta and the coherent power (P/P x r_delta^2) per probe — the owner's
+decomposition is in the formal evaluator. Targets for the pilot: reduce the chain's
+mid-frequency overshoot (1.27 on s8), raise coherent power (0.295 at the top probe), keep
+the single-level numbers.

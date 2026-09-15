@@ -81,11 +81,20 @@ def metrics(sc, pred, x1, tag):
         Fk = p0.rfftn(d[None]); P = g.shell_avg(np.abs(Fk[0]) ** 2)
         m = (g.shell_norm > 0) & (g.kshell > 0)
         return g.kshell[m], P[m]
-    kT, PT = spec(dens(x1)); k, P = spec(dens(pred))
+    rt = dens(x1); rp = dens(pred)
+    kT, PT = spec(rt); k, P = spec(rp)
     eul = [float(P[np.argmin(abs(k - q))] / PT[np.argmin(abs(k - q))]) for q in (knyc, 1.5 * knyc, 2 * knyc)]
-    print(f"  {tag:28s} r={r:.4f} P/P={pp:.4f} rms/h_f={rms:.3f} | Eul P_d/P @(1,1.5,2)kNyc = "
-          f"{[round(x,3) for x in eul]}")
-    return dict(r_high=r, ratio_P_high=pp, rms=rms, eul=eul)
+    Ft = p0.rfftn((rt / rt.mean() - 1).numpy().astype(np.float32)[None])
+    Fp = p0.rfftn((rp / rp.mean() - 1).numpy().astype(np.float32)[None])
+    num = g.shell_avg((Fp[0] * np.conj(Ft[0])).real)
+    den = np.sqrt(g.shell_avg(np.abs(Fp[0]) ** 2) * g.shell_avg(np.abs(Ft[0]) ** 2))
+    mm = (g.shell_norm > 0) & (g.kshell > 0)
+    rdel = (num / np.maximum(den, 1e-30))[mm]
+    rdl = [float(rdel[np.argmin(abs(k - q))]) for q in (knyc, 1.5 * knyc, 2 * knyc)]
+    coh = [round(e * rr * rr, 3) for e, rr in zip(eul, rdl)]
+    print(f"  {tag:28s} r={r:.4f} P/P={pp:.4f} rms/h_f={rms:.3f} | Eul P_d/P = {[round(x,3) for x in eul]} "
+          f"| r_d = {[round(x,3) for x in rdl]} | coherent = {coh}")
+    return dict(r_high=r, ratio_P_high=pp, rms=rms, eul=eul, r_delta=rdl, coherent=coh)
 
 
 def main():
@@ -93,6 +102,8 @@ def main():
     ap.add_argument("--pair", choices=["specialist", "shared", "resflow"], required=True)
     ap.add_argument("--test-seed", type=int, default=8)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--flow-b", default=None,
+                    help="resflow pair only: override the downstream residual-flow checkpoint")
     ap.add_argument("--ckpt-b", default=None,
                     help="override the step-2 (64->128) checkpoint, e.g. a rollout-fine-tuned "
                          "copy of the shared model; the upstream stays the pair's default")
@@ -105,6 +116,8 @@ def main():
         bB, _ = load_model("runs/F_reg_128_3k/model_ema.pt")
         fB, _ = load_model("runs/RF_resflow_128/model_ema.pt")
         sA = sB = 0.0
+        if args.flow_b:
+            fB, _ = load_model(args.flow_b)
         mA, mB = (bA, fA), (bB, fB)
     elif args.pair == "specialist":
         mA, _ = load_model("runs/J_flow_qj/model_ema.pt")
