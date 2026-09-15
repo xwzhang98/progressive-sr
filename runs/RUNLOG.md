@@ -1686,3 +1686,54 @@ chain: better than every single-stage variant at both levels, on both boxes, in 
 Next (not launched): its chain row (specialist resflow 32->64 exists, resflow-128 exists —
 eval_chain needs a resflow pair mode), a shared/cross-scale version, rollout round 2 on the
 resflow pair.
+
+## 2026-09-15 (evening) — owner's chain evaluation of the resflow pair; claims tightened
+
+Owner computed the resflow chain row independently (my in-repo reproduction was still running
+and is superseded by their numbers; eval_chain gained a --pair resflow mode for the record).
+Two-box averages, 128^3 final, true octaves at both levels:
+
+| model | input | r_Psi | density P ratio @1/@1.5/@2 |
+|---|---|---|---|
+| shared | single, true 64 | 0.609 | 1.014/0.792/0.579 |
+| shared | chained | 0.552 | 0.809/0.501/0.282 |
+| resflow | single, true 64 | 0.683 | 1.004/0.839/0.621 |
+| **resflow** | **chained** | **0.610** | **1.150/0.913/0.587** |
+
+- The resflow CHAIN matches the old shared SINGLE-LEVEL displacement correlation (0.610 vs
+  0.609), and the chained top-probe power doubles vs the shared chain (0.282 -> 0.587),
+  retaining 95% of its own single-level value.
+- NEW ISSUE: mid-frequency overshoot at k_Ny,c in the chain — seed 8 gives 1.268, seed 9
+  1.032; large box-to-box variance.
+- **The phase problem persists, now quantified via coherent power** P_coh/P_true =
+  (P_pred/P_true) r_delta^2 (density r, not displacement r): at the top probe the resflow
+  goes 0.621 x 0.890^2 = 0.492 (single) -> 0.587 x 0.708^2 = 0.295 (chained) — total power
+  kept, but ~40% of coherent power still lost; part of the chained power is incoherent.
+  My earlier "phase contagion likely remains" is supported; "two-stage helps chained power
+  only marginally" is corrected — the POWER improvement is real, its coherence is not.
+
+Claims tightened per the owner:
+1. "Default-operator candidate" stands; "leads on all metrics" retracted — the bare
+   regression still wins displacement r and rms, and qj's two-box first probe at 32->64 is
+   closer to 1.
+2. "Prior-robust" is limited to the measured POWER statistics: one generative draw per box;
+   conditional variance/covariance/diversity untested. The randomness path (IC octave ->
+   base -> deterministic flow) may compress true conditional variation — to be checked with
+   fixed-C multi-draw evaluations.
+3. Parameters counted per CHAIN: two specialists = 6.22M (not 3.11M); a shared base+flow
+   would be 3.11M for the whole chain. And s8/s9 are box seeds, not independent trainings.
+
+Math note adopted: the FM target of stage 2 is u* = E[X - B | x_t, t, C] with EXPLICIT
+conditioning on C (the note's "C is a function of x_t" phrasing to be fixed); single-level
+path shortening does not imply compositional stability — the downstream operator's response
+to upstream error is the object to analyse.
+
+Owner's next batch (order fixed): (1) evaluation layer — chain logic into the formal
+evaluator, 8->16-step checks on the hard level and the chain, a both-levels-sampled
+generative chain, fixed-C diversity checks; (2) short rollout pilot on the resflow pair —
+freeze upstream AND base, tune the downstream flow only, no-FT/mix0/mix50 rows, paired
+augmentation restored, and the CRITICAL adaptation: recompute B for whichever coarse field
+is chosen and use X - B as the velocity target (the round-1 driver started from the physical
+source and must not be reused as-is); (3) the shared resflow + a same-base/second-stage-
+REGRESSION control. Literature: CorrDiff/AFM (ensemble calibration), PixelIR/RFMSR (controls
+first, distillation later), MP-PDE (rollout stability as input-distribution shift).

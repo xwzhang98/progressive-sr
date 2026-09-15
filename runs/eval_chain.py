@@ -57,6 +57,12 @@ def predict(model, sc, items, s_val):
                     octave_transverse=True)
     x0, x1, Pc, D = b.make(items, eta="true")
     s = torch.full((1,), s_val)
+    if isinstance(model, tuple):                      # (frozen base, residual flow)
+        baseM, flowM = model
+        with torch.no_grad():
+            z = torch.zeros(1)
+            xb = x0 + baseM(oft.net_input(x0, Pc, D), z, z)
+        return oft.sample_flow(flowM, xb, Pc, D, s, nsteps=8), x1, sc
     return oft.sample_flow(model, x0, Pc, D, s, nsteps=8), x1, sc
 
 
@@ -84,7 +90,7 @@ def metrics(sc, pred, x1, tag):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pair", choices=["specialist", "shared"], required=True)
+    ap.add_argument("--pair", choices=["specialist", "shared", "resflow"], required=True)
     ap.add_argument("--test-seed", type=int, default=8)
     ap.add_argument("--out", default=None)
     ap.add_argument("--ckpt-b", default=None,
@@ -92,7 +98,15 @@ def main():
                          "copy of the shared model; the upstream stays the pair's default")
     args = ap.parse_args()
 
-    if args.pair == "specialist":
+    if args.pair == "resflow":
+        # two-stage at each level: frozen regression base + residual flow
+        bA, _ = load_model("runs/R_reg_phys_3k/model_ema.pt")
+        fA, _ = load_model("runs/RF_resflow/model_ema.pt")
+        bB, _ = load_model("runs/F_reg_128_3k/model_ema.pt")
+        fB, _ = load_model("runs/RF_resflow_128/model_ema.pt")
+        sA = sB = 0.0
+        mA, mB = (bA, fA), (bB, fB)
+    elif args.pair == "specialist":
         mA, _ = load_model("runs/J_flow_qj/model_ema.pt")
         mB, _ = load_model("runs/J_flow_128/model_ema.pt")
         sA = sB = 0.0
