@@ -1643,3 +1643,20 @@ Launched:
 - CPU: oracle-prior generative evaluation on the existing RF_resflow (32->64) — does the
   exact joint prior push the resflow's generative Eulerian to its emulator level, as it did
   for the single-stage flow?
+
+## 2026-09-14 21:45 — the residual flow is prior-robust (oracle evaluation)
+
+Sampler ladder on RF_resflow (32->64, seed 8), generative Eulerian at (1/1.5/2) k_Ny,c:
+independent-T 1.106/1.046/0.879; GenIC-oracle 1.10/1.03/0.86 and 1.083/1.026/0.862;
+emulator reference 1.082/1.029/0.844. All within 0.02-0.03 of each other.
+
+**The prior sensitivity that governed the single-stage flow (independent-T 0.860 vs oracle
+0.957 vs emulator 0.963 at k_Ny,c) has essentially vanished in the two-stage design.** The
+sampled octave's imperfect joint statistics pass through the conditional-mean base first,
+which is insensitive to the octave's fine structure; the residual flow then operates on the
+base's output. Practical consequence: the residual flow does not need the exact-prior/oracle
+sampler at this level for these metrics. The owner's boundary stands in principle (a correct
+conditional prior is still the right target), but the sensitivity is an order smaller — a
+paper-worthy robustness property of the architecture.
+
+RF_resflow_128 training continues overnight (~06:30).
