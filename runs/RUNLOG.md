@@ -1982,3 +1982,38 @@ the "headroom is phase and k > k_Ny,c, not band power" reading stands at both le
 Phase B (Y64-base) success criterion unchanged: in-band P/P in [0.95, 1.00] AND r_delta@0.9kNy64 > 0.95.
 Caveats: one set (set0); the 1% frontier of Y is 0.26 h/Mpc at both levels (the excess starts at the
 largest scales of the band, not at the Nyquist), which is the same signature as on the laptop.
+
+## 2026-09-16 — Phase A.3: Phase 0 on the PSC series, set0, 64->128->256->512 (job 1214902, RM r011, 424 s)
+
+`sbatch hpc/slurm_phase0.sh` (commit 66ca7ce + cwd fix): `phase0_octaves.py --levels 64 128 256 512 --box 100000
+--dis .../dmo-{N}/set0/PART_009/disp.npy --ic .../dmo-512/set0/IC/disp.npy --vel ... --offset 0.5 --growth 76.7439
+--window cube` -> `runs/phase0_real_set0_1214902/` (phase0_results.json, phase0_summary.png; npz gitignored).
+NOTE: the "nestedness/convention check" printed by this run (2.3e-7 / 0) is TRIVIAL here because the lower-level
+ICs are cube-truncated from the single 512 IC inside phase0; the real offset audit is the entry above.
+Velocity transitions were analysed too (`*_vel` in the json; not tabulated here).
+
+Cube window, displacement, values interpolated at fixed k/k_Ny,c (first-ever 128->256 and 256->512 numbers):
+| transition | multistream frac | rms eps/h_c | P_eps/P_c @0.5/0.75/0.94 kNy,c | r(c,Rf) @0.94 | Wiener T @0.5/0.75/0.94 | detail r^2(lin) @1.1/1.5/1.95 kNy,c | T_det/G @1.1/1.95 | P_d/(G^2 P_lin) @1.1/1.5/1.95 | detail kurt (in/out MS) | 2LPT harmonics P/P_d |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 64->128  | 0.374 | 0.272 | 0.066/0.288/0.572 | 0.677 | 0.940/0.867/0.796 | 0.288/0.139/0.056 | 0.472/0.262 | 0.77/0.78/1.24 | 2.85 (2.42/3.06) | 0.286 |
+| 128->256 | 0.418 | 0.390 | 0.086/0.338/0.607 | 0.645 | 0.946/0.878/0.809 | 0.158/0.068/0.025 | 0.372/0.209 | 0.88/1.01/1.76 | 5.38 (4.61/6.00) | 0.367 |
+| 256->512 | 0.443 | 0.573 | 0.112/0.390/0.661 | 0.601 | 0.949/0.879/0.803 | 0.076/0.031/0.014 | 0.288/0.164 | 1.09/1.35/1.94 | 9.76 (8.62/10.85) | 0.379 |
+
+Reading:
+* 64->128 reproduces the laptop's selfsim facts on the production series: P_eps/P_c = 0.572 at 0.94 k_Ny,c
+  (CLAUDE.md: 0.57), r^2 of the linear octave ~0.3 at the bottom of the octave falling to 0.06 at the top,
+  multi-stream fraction 0.37 (30-40%), Wiener gain G = T/growth < 1 everywhere (0.47 -> 0.26).
+* Coarse-band statistics are nearly LEVEL-INVARIANT: the coarse run's error at 0.94 k_Ny,c grows only 0.57 ->
+  0.61 -> 0.66, and the Wiener T(k) of the coarse band is the same curve at all three levels (0.80 at 0.94
+  k_Ny,c). Good news for one weight-shared 2x operator on the correction.
+* The DETAIL band is not level-invariant: the linear octave explains 0.29 -> 0.16 -> 0.08 of it at the octave
+  bottom (0.056 -> 0.025 -> 0.014 at the top); the conditional detail becomes heavy-tailed (kurtosis 2.8 ->
+  5.4 -> 9.8, inside AND outside the multi-stream mask); the coarse-only 2LPT harmonics hold 29 -> 38% of
+  the detail power but stay uncorrelated with it (r ~ -0.02 .. -0.005). P_d/(G^2 P_lin): the linear octave
+  overshoots the detail power at 64->128 (0.77 at the octave bottom) but undershoots it from 128->256 up
+  (1.0 -> 1.9 at the top of the 256->512 octave) -- the source amplitude for the higher transitions needs
+  the Wiener/measured filter, linear theory is wrong in both directions depending on level.
+* Multi-stream variance ratio in/out: 1.33, 1.28, 1.22 -- the detail is only moderately larger inside halos;
+  the level dependence is in the tails (kurtosis), not the variance.
+Consequence for the weight-shared design: the style scalar must carry the level (sigma-matching, RUNLOG
+2026-09-09) AND the source filter must be per level; expect the flow-vs-regression gap to widen with level.

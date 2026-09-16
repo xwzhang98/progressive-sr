@@ -115,3 +115,19 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
 * `.claude/` is local session state, now gitignored; scratchpad scripts were rescued into
   `runs/` (fig_y64, phase3_models, fig_chain, fig_chainfull, nsteps, rf_oracle, rf_s9,
   rf128_s9) with paths made repo-relative — they are the provenance of every committed figure.
+
+## 7. Cluster session 2026-09-16 — Phase A DONE (details: RUNLOG 2026-09-16 entries)
+
+* Env `torch206` (torch 2.8 cu128); selftests match; smoke test baseline bit-identical. GPU: one A100 via the
+  owner's held allocation (`srun --jobid=<hold job> --overlap --exact --gres=gpu:1 ...`), ask which is free.
+* Data: the PSC series is 16 same-seed sets x 64/128/256/512 (`cosmo_sr/2-data/train/int_redshift_same_cosmology`,
+  map2map .npy, kpc/h, offset **0.5**, IC only at 64/512; raw BigFile with all ICs in `sim_output/dmo-100MPC/...`).
+  C1's production data therefore already exists (16 seeds of 64/128 + 256/512).
+* Bug fixed: multi-octave offset phase in `restrict_spectral`/`prolong_spectral` (one-octave path unchanged).
+* A.3 Phase 0 set0 (RUNLOG table): coarse-band stats level-invariant (P_eps/P_c 0.57/0.61/0.66 at 0.94 k_Ny,c,
+  Wiener T = 0.80 at all levels), detail band not (linear r^2 0.29 -> 0.16 -> 0.08; kurtosis 2.8 -> 9.8;
+  multistream 0.37 -> 0.44).
+* A.4 (RUNLOG table): 128 is converged to 1% vs 512 in the 64 band (upgrade of "128 is a reference");
+  Y128 = R Psi_256 over-concentrates +30..48% vs +10..19% for Y64 -- the label excess grows with level.
+* NEXT = Phase B (Y64-base retrain) as specified in §2; needs a GPU and the 32-level data (`data/selfsim`
+  rsync from the laptop, or convert the raw `dmo-32` BigFile outputs with `hpc/convert_snapshot.py`).
