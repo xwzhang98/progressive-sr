@@ -1819,3 +1819,26 @@ native64 vs ref128 density: 0.947/0.961/0.954 at (kNy32, 0.75, 0.9 kNy64), r@0.9
 Y64 vs ref128: **1.179/1.303/1.370** (coefficient identity 1.0e-7). The label's
 over-concentration is NOT an old-IC artifact; the native run's 5%-level band agreement holds
 on clean data too (1%/5% bands to 0.32/0.94 h/Mpc).
+
+## 2026-09-15 23:20 — directive step 3: existing models against the 128^3 density reference
+
+Same estimator/mesh/shells as step 2; s8/s9 (old-IC, flagged); emulator mode (true octave).
+
+| vs 128^3 density | s8: kNy32 / 0.75 / 0.9 kNy64 | s9 | r@0.9 (s8/s9) |
+|---|---|---|---|
+| native 64^3 sim | 0.976/0.952/0.964 | 0.987/0.981/0.987 | 0.977/0.975 |
+| regression | 1.393/1.733/1.914 | 1.214/1.344/1.430 | 0.907/0.914 |
+| resflow | 1.062/0.996/0.900 | 0.996/0.879/0.783 | 0.918/0.915 |
+| Y64 (ideal label) | 1.223/1.321/1.344 | 1.110/1.140/1.165 | 0.981/0.987 |
+
+Readings for the report:
+1. **Under the 128 reference, the native 64 run beats every model and the ideal label in this
+   band, in both power (2-5%) and phase (r 0.975+).** Expected — the models were trained to
+   reproduce the 64 run — but it makes the directive's premise concrete: the headroom below
+   k_Ny,64 in band POWER is < 5%; the real 64-vs-128 gap lives in phase and at k > k_Ny,64.
+2. resflow is the closest model (its Q_J training pulls the density toward its own 64-level
+   reference, which is itself near the 128 one); the regression's excess (1.2-1.9) is roughly
+   the Y64 excess compounded with its own over-concentration.
+3. Main band capped at k < k_Ny,64 per the directive; 64^3-particle densities do carry
+   content beyond it (points alias), where all 64-representations differ most from 128 — a
+   documented boundary, not measured here.
