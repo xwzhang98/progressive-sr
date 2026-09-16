@@ -1861,3 +1861,22 @@ by the same script that will measure the RFT2 rows (comparability). Baseline for
 s8 chained Eul [1.268, 0.994, 0.614], r_d [0.908, 0.824, 0.723], coherent [1.046, 0.675, 0.321];
 s9 chained Eul [1.032, 0.832, 0.560], coherent [0.831, 0.533, 0.269]; direct rows unchanged
 within noise (r 0.677/0.689).
+
+## 2026-09-16 01:00 — RFT2 round-2 verdict (rollout pilot closed)
+
+Training: RFT2_mix50 (2026-09-15, 800 steps) and RFT2_mix0 control (800 steps, ended 00:06);
+both chunked --max-seconds 900 --resume, one GPU job at a time; eval_chain on CPU, four rows
+(runs/chain_RFT2_{mix50,mix0}_s{8,9}.json), baseline = re-measured no-FT rows (23:55 entry).
+
+| chained | r s8/s9 | Eul@(kNy64,1.5kNy64,kNy128) s8 | s9 | coh@kNy128 |
+|---|---|---|---|---|
+| no-FT  | .602/.617 | 1.268/0.994/0.614 | 1.032/0.832/0.560 | .321/.269 |
+| mix0   | .601/.616 | 1.244/0.953/0.579 | 1.010/0.796/0.522 | .303/.248 |
+| mix50  | .596/.610 | 1.161/0.856/0.498 | 0.952/0.714/0.443 | .251/.203 |
+
+Direct mode: no-FT r .677/.689 Eul 1.018/0.991 -> mix50 .669/.681 Eul 0.883/0.904 (damped).
+Criteria: overshoot reduced (real: mix0 isolates ~1/4 as drift), coherent NOT raised (down
+everywhere), r_delta unchanged to 3rd digit in every cell -> the mixing benefit is pure power
+damping toward the r^2 line, no phase repair; direct regime measurably damaged. Round-2 with
+all owner fixes = clean negative; downstream rollout FT closed, chain error goes upstream.
+REPORT_9.md sec 3b written.

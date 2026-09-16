@@ -96,6 +96,51 @@ trained toward the 64 run — and it does not overturn the earlier model-vs-mode
 which used the 64 run as the reference by design. The old displacement metrics are retained
 in the per-run results as auxiliary diagnostics.
 
+## 3b. Rollout fine-tuning, round 2 — the pilot verdict (owner's parallel thread)
+
+Separate thread from the directive: the owner-specified round-2 pilot on the resflow pair.
+Frozen upstream (base32+flow32) and frozen base128; only the downstream flow tuned, warm-started
+from RF_resflow_128; 800 steps at LR 5e-5; λ reused (0.012137, not re-derived); the velocity
+target recomputed for the *chosen* coarse; paired cubic-group augmentation. `mix` = probability
+of substituting the predicted 64³ for the true one; mix0 is the pure-drift control. Metrics vs
+the native 128³ run (this stage's own reference), probes at (k_Ny,64 / 1.5 k_Ny,64 / k_Ny,128);
+"coherent" = (P/P_true)·r_δ².
+
+| chained (predicted coarse) | r (s8/s9) | Eul P/P at probes, s8 | s9 | coherent@k_Ny,128 |
+|---|---|---|---|---|
+| no-FT | 0.602/0.617 | 1.268/0.994/0.614 | 1.032/0.832/0.560 | 0.321/0.269 |
+| mix0 (control) | 0.601/0.616 | 1.244/0.953/0.579 | 1.010/0.796/0.522 | 0.303/0.248 |
+| mix50 | 0.596/0.610 | 1.161/0.856/0.498 | 0.952/0.714/0.443 | 0.251/0.203 |
+
+| direct (true coarse) | r (s8/s9) | Eul P/P, s8 | s9 | coherent@k_Ny,128 |
+|---|---|---|---|---|
+| no-FT | 0.677/0.689 | 1.018/0.849/0.636 | 0.991/0.830/0.605 | 0.499/0.485 |
+| mix0 (control) | 0.675/0.688 | 0.976/0.798/0.590 | 0.970/0.796/0.569 | 0.462/0.453 |
+| mix50 | 0.669/0.681 | 0.883/0.696/0.486 | 0.904/0.704/0.472 | 0.366/0.357 |
+
+Against the three pre-registered criteria:
+
+1. **Chained mid-frequency overshoot: reduced, and the reduction is mostly real.** 1.268→1.161
+   (s8), 1.032→0.952 (s9); the mix0 control moves only to 1.244/1.010, so ~3/4 of the effect
+   is the mixing itself, not low-LR drift.
+2. **Coherent power: NOT raised — lowered everywhere** (chained k_Ny,128: 0.321→0.251,
+   0.269→0.203). r_δ is unchanged to the third digit in every cell. The overshoot reduction is
+   therefore *pure power damping*: exposure to predicted inputs teaches the flow to emit less
+   power, moving it toward the regression-like r² line and giving up the flow's P/P=1 property
+   — it repairs no phase.
+3. **Single-level regime: partially preserved.** Lagrangian r costs only ~0.008, but the
+   direct-mode density is audibly damped (1.018→0.883 at k_Ny,64, tail 0.64→0.49); mix0 shows
+   the same signature at ~1/4 amplitude.
+
+**Verdict: with every round-1 defect fixed (recomputed base target, paired augmentation,
+reused λ, short low-LR schedule), fine-tuning the downstream flow on rollout inputs still
+buys its overshoot reduction by damping power, not by repairing phase — and phase is the
+actual chain bottleneck (r_δ 0.91 at k_Ny,64 chained vs 0.98 direct, untouched in every
+cell).** The information needed to restore those phases is not in the downstream input, so no
+amount of downstream exposure can put it back. Chain repair must go upstream (a better 32→64
+phase, cf. §6) or into explicit uncertainty conditioning; more downstream fine-tuning is not
+recommended. This closes the rollout-pilot thread with a clean negative.
+
 ## 4. Answers to the directive's five questions
 
 **(1) Which deviations are now attributed to the IC construction, and which are not?**
