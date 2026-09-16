@@ -1789,3 +1789,33 @@ native 64 run — any 64^3-particle representation that aims at 128-level densit
 compensating small-scale displacement content, not the bare restriction. Box scatter is large
 (Y64 excess 1.34 vs 1.17 at 0.9 kNy,64) and this is old-IC data for the native row: the
 strictly-nested rerun (in progress) re-checks both rows on clean ICs.
+
+## 2026-09-15 22:30 — strict trio evolved; IC error vs dynamical error separated; clean-IC Y64 confirmed
+
+MP-Gadget accepted the hand-written strictly-nested BigFile ICs unmodified; the s5000 trio
+(32/64/128, Zel-only ICs, nesting 1.8e-7) evolved to z=0 and converted.
+
+### The first clean separation of IC error from dynamical error
+
+| pair | IC rel-RMS | z=0 rel-RMS | z=0 r@0.9 kNy,c |
+|---|---|---|---|
+| 32->64 STRICT | 1.8e-07 | 0.126 | 0.821 |
+| 32->64 old s8 | 1.4e-01 | 0.136 | 0.784 |
+| 64->128 STRICT | 1.8e-07 | 0.093 | 0.743 |
+| 64->128 old s8 | 8.6e-02 | 0.094 | 0.712 |
+
+**Making the ICs exactly nested changes the final-state cross-level mismatch by only ~0.01
+in rel-RMS and 0.03-0.04 in near-Nyquist correlation.** The z=0 non-nesting is overwhelmingly
+DYNAMICAL (the fine run resolves octave modes whose backreaction alters the shared band, plus
+discreteness/softening) — not inherited from the generator. Directive question 1 answered:
+the IC construction accounts for a small fraction of the final coarse-band mismatch; and the
+project's model results on old-IC data are not materially contaminated at the final-state
+level. Caveat: the strict trio is Zel-only (no 2LPT, ~1e-2 of the IC displacement at z=99, a
+documented physical difference from the GenIC pipeline).
+
+### Clean-IC Y64 check (nested s5000): both step-2 conclusions reproduce
+
+native64 vs ref128 density: 0.947/0.961/0.954 at (kNy32, 0.75, 0.9 kNy64), r@0.9=0.977;
+Y64 vs ref128: **1.179/1.303/1.370** (coefficient identity 1.0e-7). The label's
+over-concentration is NOT an old-IC artifact; the native run's 5%-level band agreement holds
+on clean data too (1%/5% bands to 0.32/0.94 h/Mpc).
