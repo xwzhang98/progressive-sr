@@ -10,7 +10,7 @@
 # train_state.pt reports the target step count (results.json exists).
 #   sbatch hpc/slurm_train.sh runs/A_flow_phys --nc 64 --nf 128 --dis ... --ic ... --growth ...
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"   # sbatch spools the script; submit from the repo root
 source .venv/bin/activate
 OUT=$1; shift
 export PYTHONUNBUFFERED=1

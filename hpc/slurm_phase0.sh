@@ -11,7 +11,7 @@
 # PSC series of 2026-09-16 (map2map .npy in kpc/h, IC at z=99 only for the 64 and 512 levels, so
 # the 512 IC is passed as the single top-level file and lower-level ICs are cube-truncated from it).
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "${SLURM_SUBMIT_DIR:-$(dirname "$0")/..}"   # sbatch spools the script; submit from the repo root
 PY=${PY:-/hildafs/projects/phy200018p/xzhangn/source/anaconda3/envs/torch206/bin/python}
 DATA=${DATA:-/hildafs/home/xzhangn/xzhangn/cosmo_sr/2-data/train/int_redshift_same_cosmology}
 SET=${SET:-0}
