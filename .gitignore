@@ -28,3 +28,4 @@ notes/*.synctex.gz
 # real snapshot data pulled from Box (tens of GB) -- never in git
 data/
 .claude/
+runs/.claims/

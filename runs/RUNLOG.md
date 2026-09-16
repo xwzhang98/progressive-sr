@@ -2017,3 +2017,23 @@ Reading:
   the level dependence is in the tails (kurtosis), not the variance.
 Consequence for the weight-shared design: the style scalar must carry the level (sigma-matching, RUNLOG
 2026-09-09) AND the source filter must be per level; expect the flow-vs-regression gap to widen with level.
+
+## 2026-09-16 — Phase B prerequisites: converter validated bitwise, dmo-32 sets 1-15 launched, GPU held
+
+- `hpc/convert_snapshot.py <raw>/dmo-64/set0/output/{IC,PART_009} --id-offset 1 --id-order C --offset 0.5
+  --pos-unit 1` reproduces the owner's PSC `.npy` (disp AND vel, IC and z=0) with max|a-b| = 0 -> the raw
+  MP-Gadget outputs (`sim_output/dmo-100MPC/int_redshift_same_cosmology`) and the PSC series are the same
+  data under the same convention (kpc/h, q = (i+0.5) h, IDs 1-based C order). Wrong id-order gives 26 h.
+- 32^3 level: set0 existed (run 2026-02-24, Seed 3242400, Nmesh 64 = 2 Ngrid, same params otherwise);
+  sets 1..15 created in `sim_scripts/.../dmo-32/set{1..15}` (Seed = 3242400+k, verified equal to the
+  64/128/256/512 seeds of every set) and launched as one RM job (1217024, `submit_sets1to15.job`).
+  set0 converted -> `data/psc/dmo-32/set0/{IC,PART_009}/{disp,vel}.npy`; `data/psc/dmo-{64..512}` are
+  symlinks to the PSC directories, so one pattern `data/psc/dmo-{N}/set{seed}/PART_009/disp.npy` covers
+  all levels. 32 vs R_cube[64->32] at offset 0.5: corr 0.991 (z=0) / 0.990 (IC), rel-rms 0.13/0.14
+  (the GenIC folding level, as for 64 vs 128).
+- GPU: `hpc/slurm_hold_gpu.sh` holds one A100 on HENON-GPU (qos henon-gpu; job 1216965 on henon-gpu01,
+  2 days); experiments go in with `srun --jobid=1216965 --overlap --exact --ntasks=1 --cpus-per-task=8
+  --gres=gpu:1 ...`. Owner's instruction: use only this allocation, never the TWIG/other HENON ones.
+- Laptop base recipe recovered from runs/R_reg_phys_3k/results.json: nc 32 nf 64, train seeds 0..7,
+  test seed 8 (s9 second box), base 24, 3000 steps, source_filter none, --regression; resflow_train.py
+  = frozen base + residual flow (qj, lambda auto), train seeds 0..7, test 8.
