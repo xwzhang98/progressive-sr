@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # progressive-sr — project memory for Claude Code
 
 ## What this is
@@ -69,6 +73,18 @@ property holds for the full nested state, only approximately for reduced states.
   `eulerian_form` (Q_E) and `jacobian_form` (Q_J), the `eulerian_inputs` channel;
   `python eulerian_metric.py` self-test.
 - `checks/smear_check.py` — numerical check of the smearing formula on a multi-stream Zel'dovich field.
+- `nested_ic.py` — strictly nested ICs from one Fourier mother field (BigFile out, Zel-only);
+  a *diagnostic* generator, not the production one (HANDOFF §2 C1: production = 2LPT GenIC).
+- `compute_spectra.py` — the owner-reviewed interlaced-CIC + window-deconvolution density
+  estimator (common 256^3 mesh, complete shells, no shot-noise subtraction). Use it for every
+  density claim; quote both boxes, never average.
+- `sims/` — GenIC/Gadget `.param` files and the self-sim run scripts for the 32/64/128 boxes.
+- `runs/*.py` — experiment drivers and evaluators (`resflow_train.py`, `multi_train.py`,
+  `rollout_ft*.py`, `eval_chain.py`, `eval_eulerian.py`, `eval_y64.py`, `make_figures.py`,
+  `fig_*.py`); each docstring states the owner approval and the RUNLOG entry it belongs to.
+  `runs/REPORT_*.md` are the stage reports (REPORT_9 is current); `runs/RUNLOG.md` is append-only.
+- `HANDOFF.md` — cluster session memory: state, approved plan A -> B -> C1, reference numbers,
+  gotchas, rsync manifest. Read it with this file at the start of every cluster session.
 - `README.md` — commands, expected numbers, output formats.
 - `KICKOFF_PROMPT.md` (Stages 0–4), `KICKOFF_STAGE3B.md` (review-driven experiments),
   `KICKOFF_STAGE5.md` (wiener source, multi-stream split), `KICKOFF_STAGE6.md` (Eulerian tests
@@ -80,6 +96,30 @@ property holds for the full nested state, only approximately for reduced states.
 - `reference_results/` — figures/JSON from verified runs in the cloud sandbox:
   selftest slopes 2.2 / 4.15 (theory 2 / 4); toy 16->32, 600 steps CPU:
   baseline r=0.917, P/P=0.83 -> emulator r=0.994, P/P=0.993; generative P/P=1.02.
+
+## Commands
+```bash
+# self-tests (no data; compare with reference_results/: slopes 2.2 / 4.15, 20-step CPU loss 3.0888e-02)
+python phase0_octaves.py --selftest --selftest-dealias --levels 32 64 128 --offset 0.5 --out st_dealias
+python phase0_octaves.py --selftest                    --levels 32 64 128 --offset 0.5 --out st_alias
+python eulerian_metric.py                      # Q_E / Q_J self-test
+python checks/smear_check.py
+# toy prototype (synthetic 2LPT), regression baseline next to it
+python octave_flow_toy.py --nc 16 --nf 32 --steps 300 --base 16          # ~2-3 min CPU
+python octave_flow_toy.py --nc 32 --nf 64 --steps 1500 --device cuda [--regression]
+python octave_flow_toy.py --eval-only runs/<name>/model_ema.pt ...      # re-evaluate, same --nc/--nf/--test-seeds
+# real data: IC-snapshot ID/offset check, then conversion, then Phase 0
+python hpc/convert_snapshot.py <ic_snapshot> /dev/null --check --id-offset 0|1 --id-order C|F --offset 0|0.5
+python hpc/convert_snapshot.py <snapshot> data/<seed>/<N>/dis.npy --offset <o>
+python phase0_octaves.py --levels 64 128 256 512 --box 100 --dis ... --ic ... --offset <o> --growth <g>
+# resumable training on SLURM (one GPU, self-resubmits until results.json exists)
+sbatch hpc/slurm_train.sh runs/<name> --nc 64 --nf 128 --dis ... --ic ... --growth ...
+# evaluators (CPU): python runs/eval_eulerian.py runs/<name> ; python runs/eval_chain.py --pair specialist|shared|resflow
+```
+Real-data flags: `--dis/--ic` are `{seed}`/`{N}` patterns, `--train-seeds/--test-seeds` are
+directory ids, `--growth` = D(z_out)/D(z_ic) (76.7439 for the current cosmology). `--box` follows
+the units on disk: the laptop `data/selfsim` cubes are kpc/h (`--box 100000`), cubes written by
+`hpc/convert_snapshot.py` are Mpc/h (`--box 100`). Eval flags must mirror training flags.
 
 ## Conventions (do not silently change)
 - Fields are `float32 (3, N, N, N)` Lagrangian displacements in Mpc/h, map2map layout.
@@ -95,6 +135,15 @@ property holds for the full nested state, only approximately for reduced states.
 - Prefer `--device mps` for the network; if any op is unsupported on MPS
   (conv3d / avg_pool3d / circular pad on old torch), fall back to `--device cpu`
   rather than rewriting the model.
+- HPC (Bridges-2 style SLURM, this repo lives under `/hildafs/projects/phy200018p/xzhangn/`):
+  no `.venv` yet — Python comes from the owner's anaconda3 (`m2m`, `DiT`, ... envs); pick or
+  build one CUDA-torch env, pin versions in RUNLOG, and point `hpc/slurm_train.sh` (which
+  `source`s `.venv/bin/activate`) at it. GPU allowance: **one A100 at a time**, `--gres=gpu:1`
+  on partition `TWIG-GPU` or `HENON-GPU`; the owner holds it with a sleeping sbatch job and
+  experiments go in via `srun --jobid=<that job>`. CPU-only work (selftests, conversion, Phase 0,
+  evaluators) goes to `RM`. The PSC series (`cosmo_sr/2-data/.../int_redshift_same_cosmology`,
+  16 same-seed sets x 64/128/256/512, kpc/h, IC only at 64 and 512; raw BigFile incl. all ICs under
+  `sim_output/dmo-100MPC/...`) has **offset 0.5** (cross-phase audit, RUNLOG 2026-09-16).
 - HPC cluster is back online (2026-09-16). Real snapshots (64/128/256/512, same seed)
   live there; cluster sessions start from `HANDOFF.md` (state, plan, conventions, transfer
   manifest) — read it together with this file. On the laptop, only run the real-data paths

@@ -153,8 +153,10 @@ def restrict_spectral(field_fine, gf, gc, W, offset):
     F = rfftn(field_fine.astype(np.float32)) * W
     if offset:
         # true coefficients are F * exp(-i k o h_f); re-referencing to the
-        # coarse grid positions (i + o) h_c = (2i + 2o) h_f needs exp(+i k o h_f)
-        F = F * np.conj(gf.phase(offset))
+        # coarse grid positions (i + o) h_c = (m i + m o) h_f, m = Nf/Nc, needs
+        # exp(+i k o (m - 1) h_f)  (= exp(+i k o h_f) for one octave; the multi-octave
+        # factor was missing until 2026-09-16, see RUNLOG)
+        F = F * np.conj(gf.phase(offset * (Nf // Nc - 1)))
     ax, c_ax, az = _coarse_slices(Nf, Nc)
     Fc = np.zeros((F.shape[0], Nc, Nc, Nc // 2 + 1), dtype=np.complex64)
     sub = F[:, ax][:, :, ax][:, :, :, az]
@@ -177,7 +179,7 @@ def prolong_spectral(field_coarse, gc, gf, offset):
     for i, kk in enumerate((gf.kx, gf.ky, gf.kz)):
         F = np.where(np.abs(kk) >= gc.kny - 1e-6 * gc.kny, 0.0, F)
     if offset:
-        F = F * gf.phase(offset)
+        F = F * gf.phase(offset * (Nf // Nc - 1))   # inverse of the restriction phase
     F *= (Nf / Nc) ** 3
     return irfftn(F, s=(Nf, Nf, Nf)).astype(np.float32)
 

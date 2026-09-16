@@ -1890,3 +1890,60 @@ rf_s9, rf128_s9) and all runs/*.py absolute paths rewritten repo-relative (verif
 smoke test + ast.parse on every file; eval_y64 --help runs). CLAUDE.md HPC-maintenance line
 updated; .claude/ gitignored. `HANDOFF.md` written: state, approved plan A/B/C1, reference
 numbers, conventions/gotchas, rsync manifest (git carries no weights/.npy), open threads.
+
+## 2026-09-16 — HPC bring-up (Phase A step 1: env + selftests + smoke test)
+
+Cluster: PSC (hildafs), repo `/hildafs/projects/phy200018p/xzhangn/progressive_sr/progressive-sr`, HEAD ff105ad.
+Env (owner's choice): conda `torch206` = Python 3.11.11, torch 2.8.0+cu128, numpy 2.2.4, scipy 1.15.2,
+matplotlib 3.10.1, bigfile importable. GPU allowance (owner): ONE A100 at a time, TWIG-GPU or HENON-GPU;
+CPU work on RM (28 cores / 128 GB nodes). Login node (CPU, shared) used for the checks below.
+
+- `python phase0_octaves.py --selftest --selftest-dealias --levels 32 64 128 --offset 0.5 --out st_dealias`
+  -> operator check |RP x - x|/|x| = 3.23e-07; slopes P_eps/P_div,eps = 2.19/4.14 (32to64), 2.18/4.18
+  (64to128); Haar 0.85/2.78; nestedness 2.8e-07 / 3.2e-07. Matches reference 2.2 / 4.15.
+- `python phase0_octaves.py --selftest --levels 32 64 128 --offset 0.5 --out st_alias`
+  -> aliased slopes 0.19/2.15 and -0.71/1.30 (white floor, as documented).
+- `python octave_flow_toy.py --nc 16 --nf 32 --steps 20 --base 16 --rms-delta 2.0 --device cpu --out <scratch>/cpu_probe`
+  -> baseline r=0.915459 P/P=0.835218 rms err/h_f=0.184311, multistream 0.166: BIT-IDENTICAL to
+  reference_results/toy16to32_cube_flow_physical.json (data synthesis + x0 path unchanged). Step-1 loss
+  3.3257e-02 bit-identical; from step 2 the losses differ at the 1e-3 level (x86 + torch 2.8 backward /
+  optimizer kernels vs the laptop); step 20 = 3.0882e-02 vs the laptop's 3.0888e-02. Timing 3.3 s/step on
+  the shared login node (vs 0.57 s native Mac CPU) — not a benchmark. Numbers acceptable; the
+  "bit-identical" criterion is a same-machine regression test, not a cross-platform one.
+- Data found (owner): `/hildafs/home/xzhangn/xzhangn/cosmo_sr/2-data/train/int_redshift_same_cosmology/
+  dmo-{64,128,256,512}/set{0..15}/{IC,PART_009}/{disp,vel,style}.npy`, already map2map layout
+  float32 (3,N,N,N) in **kpc/h** (`--box 100000`), PART_009 = a=1 (z=0), IC = a=0.01 (z=99) but only
+  at the 64 and 512 levels. GenIC params (sim_scripts/dmo-100MPC/...): Seed = 3242400+set, identical
+  across the four levels of a set (16 same-seed nested series, not one!), Nmesh unset (= GenIC default
+  2*Ngrid, i.e. the folded-content caveat of RUNLOG 2026-09-15 applies), same cosmology as sims/
+  (Omega0 0.2814, OmegaL 0.7186, h 0.697, z_init 99) -> GROWTH = 76.7439 carries over.
+  Consequence for the plan: C1 (production 64/128 pairs, 16 seeds) already EXISTS as data; only the
+  conversion/offset audit (A.2) and Phase 0 (A.3) remain before B.
+- `hpc/slurm_phase0.sh` rewritten for this layout/env (env-var overrides, 512 IC as the single top-level
+  --ic, lower-level ICs cube-truncated inside phase0).
+
+## 2026-09-16 — Phase A step 2: offset audit of the PSC series + multi-octave R/P phase fix
+
+Provenance: `runs/offset_audit_psc/` (probe scripts + their stdout; probe_axes_prefix ran BEFORE the fix).
+
+Probe scripts (scratch, results below): restrict the fine field to 64^3 (cube window) and compare with
+the native 64^3 field per k-shell: r(k) and the cross-spectrum phase arg<A B*>. Caveat learned: modes
+along the full (non-rfft) axes sum Hermitian pairs, so their phase is identically 0 — only the rfft
+(z) axis and the shell average carry the signal.
+
+- z=0, R[128->64] vs native 64 run, set0: offset 0.5 -> shell phase |<0.7 deg| up to 0.94 k_Ny,64,
+  r(k) = 1.000/0.9995/0.996/0.982/0.950/0.897/0.807/0.684 (8 bins to k_Ny,64);
+  offset 0 -> phase grows linearly, -22 deg at 0.94 k_Ny,64. **OFFSET = 0.5 for this series**
+  (consistent with HANDOFF: 0.5 for the laptop's Box-downloaded production boxes).
+- IC, R[512->64] vs native 64 IC: rel-rms 0.24 (offset 0) / 0.21 (offset 0.5) — NOT ~1e-6 and not
+  discriminating by itself; per-shell it is r(k) 1.000 ... 0.84 at 0.94 k_Ny,64 (after the fix
+  below), i.e. the GenIC Nmesh=2*Ngrid folding of the 64-level IC (RUNLOG 2026-09-15), not an offset.
+- BUG found and fixed in `phase0_octaves.py` (`restrict_spectral`, `prolong_spectral`): the offset
+  re-referencing phase exp(+i k o h_f) assumed one octave; for Nf/Nc = m it must be
+  exp(+i k o (m-1) h_f). Symptom: R[512->64] and R[256->64] at offset 0.5 carried a residual z-axis
+  phase equal to a 0.375 h_64 / 0.25 h_64 shift (measured -27/-18 deg at 0.44 k_Ny vs predicted
+  -29.5/-19.7). Only phase0's single-top-level `--ic` path was affected (all other callers use offset
+  0 or one octave). After the fix: direct R[512->64] == chained R[512->256->128->64] to 3.1e-7,
+  RP = I at m=4/8 with offset 0.5 to 3e-7, z-axis phases ~0 for 128/256/512->64; the dealias
+  selftest (m=2) is IDENTICAL line-for-line before/after.
+- `hpc/slurm_phase0.sh`: OFFSET default 0.5, partition RM, torch206 python, 512 IC as top-level --ic.
