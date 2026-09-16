@@ -1852,3 +1852,12 @@ r_delta panel; both particle Nyquists marked; analysis mesh 256^3 stated in the 
 recommendation (Y64-base + native-64 residual flow). RFT2 three-row table pending the
 mix0 training + auto-eval (waiter armed on 'STAGE12 TRAIN DONE'); will be appended as §3b
 before morning delivery.
+
+## 2026-09-15 23:55 — no-FT baseline rows refreshed with full metrics (CPU, alongside GPU training)
+
+`eval_chain.py --pair resflow --test-seed 8|9` (no --flow-b): the pre-existing
+chain_resflow_s8.json predated the r_delta/coherent metrics and s9 was missing; both rewritten
+by the same script that will measure the RFT2 rows (comparability). Baseline for the verdict:
+s8 chained Eul [1.268, 0.994, 0.614], r_d [0.908, 0.824, 0.723], coherent [1.046, 0.675, 0.321];
+s9 chained Eul [1.032, 0.832, 0.560], coherent [0.831, 0.533, 0.269]; direct rows unchanged
+within noise (r 0.677/0.689).
