@@ -2068,3 +2068,35 @@ Consequence for the weight-shared design: the style scalar must carry the level 
   (on B0) -> B3 runs/RF_resflow_psc_y64 (on B1) -> eval_vs_ref.py on B2/B3 vs native 128 of set 8.
   Pre-registered success (HANDOFF §2 B): B3 in-band density P/P in [0.95, 1.00] AND r_delta@0.9 k_Ny,64
   > 0.95, beating both end-members (native 64: 0.957/0.958/0.973 on set0; Y64 label: 1.10-1.19).
+
+## 2026-09-16 17:15 — Phase B on the PSC series, part 1: B0/B1/B2 done (commit bb2f501, A100 in hold job 1216965)
+
+Train sets 0-7, test set 8, 32->64, base 24, 3000 steps, batch 2, source_filter none. Timings on the A100:
+regression 0.12 s/step (6 min), residual flow 0.16 s/step (8 min). Harness note: the launcher process was
+killed by a session teardown at B3 step 1; B3+EVAL relaunched detached (`setsid nohup`), B0-B2 unaffected.
+Test box set8: multi-stream fraction 0.300; x0 (true octave, no filter) octave r=0.550 P/P=1.527.
+
+Lagrangian octave band vs the NATIVE 64 test run (emulator = 1 Euler step for the bases, 8 Heun for the flows):
+| run | label / target | train loss | r | P/P | rms err/h_f (MS/SS) |
+|---|---|---|---|---|---|
+| B0 R_reg_psc (control base)    | native 64          | 8.44e-2 | 0.830 | 0.721 | 0.308 (0.372/0.276) |
+| B1 R_reg_psc_y64 (Y64 base)    | R_cube[128->64]    | 6.33e-2 | 0.777 | 0.688 | 0.335 (0.398/0.305) |
+| B2 RF_resflow_psc (flow on B0) | native 64, lam 0.0156 | 1.01e-1 | 0.796 | 1.001 | 0.354 |
+| B2 generative                  |                    |         | 0.206 | 0.956 | 0.584 |
+B1 is judged against a truth it was not trained on, so its lower r/P/P is expected; its loss is 25% lower
+because the projected label is smoother than the native run.
+
+Eulerian density of the 64^3 test fields (`eval_vs_ref.py`, verified estimator, offset 0.5), band k < k_Ny,64:
+| field (set8) | reference | P/P @kNy32 / 0.75kNy64 / 0.9kNy64 | r@0.9kNy64 | band min/max | 1%/5% frontier |
+|---|---|---|---|---|---|
+| native 64 (truth)      | native 128 | 1.000 / 1.012 / 1.015 | 0.974 | 0.990/1.029 | 0.50 / 1.95 |
+| B0 base                | native 128 | 1.191 / 1.299 / 1.397 | 0.924 | 1.001/1.447 | 0.26 / 0.44 |
+| B2 resflow emulator    | native 128 | 0.958 / 0.829 / 0.746 | 0.926 | 0.718/1.012 | 0.44 / 1.07 |
+| B2 resflow generative  | native 128 | 0.966 / 0.834 / 0.741 | 0.876 | 0.707/1.021 | 0.57 / 1.07 |
+Same fields vs the native 64 truth (resflow_train's own probes at k_Ny,32 / 1.5 k_Ny,32 / k_Ny,64):
+base 1.204/1.309/1.478, emulator 0.967/0.825/0.678, generative 0.976/0.829/0.682 — laptop RF_resflow
+(selfsim) had emulator 1.082/1.029/0.844 (s8) and 1.006/0.889/0.726 (s9), base 1.43-2.17: the PSC control
+sits at the low end of the laptop's two-box range; same qualitative picture (base over-concentrates,
+the residual flow repairs it from above and overshoots into a deficit at the top of the band).
+NB: set8's native 64 is within 1-3% of 128 in-band (set0 was 3-4% low) — box-to-box scatter of the
+"native 64 end-member" is of the same size as its deficit; quote both boxes when this matters.
