@@ -2055,3 +2055,16 @@ Consequence for the weight-shared design: the style scalar must carry the level 
 - `hpc/run_phaseB.sh`: the four runs B0 (control base, native label) / B1 (Y64 base) / B2 (resflow on B0) /
   B3 (resflow on B1) + EVAL, one at a time through `srun --jobid=$JOBID`. Train sets 0-7, test set 8
   (mirrors the laptop split), 3000 steps, base 24, source_filter none (laptop recipe R_reg_phys_3k).
+
+## 2026-09-16 — 32^3 sets 1-15 done and converted; Phase B launched (commit bb2f501, GPU hold job 1216965)
+
+- Job 1217024 (RM, 1 node, 8 ranks): 15 sets in ~15 min. Converted with the validated convention into
+  `data/psc/dmo-32/set{k}/{IC,PART_009}`. IC rms|x-q|/h = 0.0334 for every set; z=0 rms 2.39-2.56 h_32.
+  Seed alignment check per set: corr(dis32, R_cube[64->32] dis64) = 0.990-0.991 for all 16 sets, cross-set
+  control (set k vs set k+1) in [-0.32, +0.30] -> ALL OK.
+- Phase B launched: `JOBID=1216965 bash hpc/run_phaseB.sh B0 B1 B2 B3 EVAL` (train sets 0-7, test set 8,
+  3000 steps, base 24, batch 2, source_filter none, qj residual flow, lambda auto at step 1):
+  B0 runs/R_reg_psc (native label) -> B1 runs/R_reg_psc_y64 (--label-from 128) -> B2 runs/RF_resflow_psc
+  (on B0) -> B3 runs/RF_resflow_psc_y64 (on B1) -> eval_vs_ref.py on B2/B3 vs native 128 of set 8.
+  Pre-registered success (HANDOFF §2 B): B3 in-band density P/P in [0.95, 1.00] AND r_delta@0.9 k_Ny,64
+  > 0.95, beating both end-members (native 64: 0.957/0.958/0.973 on set0; Y64 label: 1.10-1.19).
