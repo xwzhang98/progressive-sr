@@ -1751,3 +1751,41 @@ now reports r_delta and the coherent power (P/P x r_delta^2) per probe — the o
 decomposition is in the formal evaluator. Targets for the pilot: reduce the chain's
 mid-frequency overshoot (1.27 on s8), raise coherent power (0.295 at the top probe), keep
 the single-level numbers.
+
+## 2026-09-15 22:00 — research directive step 2: the ideal projected label FAILS as a density target
+
+`runs/eval_y64.py` (reuses the owner's verified interlaced-CIC + deconvolution estimator and
+complete-shell averager; common 256^3 ANALYSIS mesh; native particle counts). Restriction
+verified as a true Fourier restriction first: retained complex coefficients of Y64 match
+those of Psi_128 to 6.8e-8 / 7.2e-8 (max relative), i.e. the label is exactly
+Y64 = R_{128->64} Psi_128 under the project conventions.
+
+Density spectra vs the SAME 128^3 reference, band 0 < k < k_Ny,64 (old-IC s8/s9 data — but
+note the Y64-vs-128 comparison is IC-clean by construction, since Y64 derives from Psi_128):
+
+| s8 | P/P at kNy,32 | 0.75 kNy,64 | 0.9 kNy,64 | r@0.9 | 1%/5% band [h/Mpc] |
+|---|---|---|---|---|---|
+| native 64^3 sim | 0.976 | 0.952 | 0.964 | 0.977 | 0.32 / 1.51 |
+| **Y64 (ideal label)** | **1.223** | **1.321** | **1.344** | 0.981 | 0.20 / 0.38 |
+
+(s9: native 0.987/0.981/0.987, band to 0.32/1.95; Y64 1.110/1.140/1.165, band to 0.26/0.57.)
+
+Two findings, both prior to any network:
+1. **Displacing 64^3 particles by the band-limited restriction of the 128^3 displacement
+   OVER-CONCENTRATES: 11-34% density excess across the band.** Removing the octave detail
+   removes exactly the small-scale spreading that keeps caustics finite — the same mechanism
+   as the regression's over-concentration, now demonstrated as a property of the LABEL
+   itself. A perfect predictor of Y64 would inherit this excess. delta[R Psi] != R delta[Psi],
+   quantified.
+2. **The native 64^3 simulation's density is already within 2-5% of the 128^3 density over
+   the whole band** (1% band to ~0.3 h/Mpc, 5% to 1.5-2.0). The coarse run's deficiency in
+   this band is displacement-level phase near its Nyquist, not band density power. The naive
+   premise "the 64 run is a poor proxy for the 128 density below k_Ny,64" is false at the
+   power level.
+
+Directive question 2 gets a data answer: Y64 as a TRAINING LABEL is exact for the
+displacement band by definition, but as a route to 128-level density it is worse than the
+native 64 run — any 64^3-particle representation that aims at 128-level density must carry
+compensating small-scale displacement content, not the bare restriction. Box scatter is large
+(Y64 excess 1.34 vs 1.17 at 0.9 kNy,64) and this is old-IC data for the native row: the
+strictly-nested rerun (in progress) re-checks both rows on clean ICs.
