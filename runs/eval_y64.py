@@ -27,8 +27,7 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, "/Users/zhangxiaowen/AntigravityProjects/progressive-sr")
-sys.path.insert(0, "/Users/zhangxiaowen/Documents/Codex/2026-09-11/zhe/progressive-sr-spectra-2026-09-15")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import phase0_octaves as p0                     # noqa: E402
 from compute_spectra import Shells, density_coeff  # noqa: E402  (verified estimator, reused)
 

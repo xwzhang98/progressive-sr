@@ -95,9 +95,10 @@ property holds for the full nested state, only approximately for reduced states.
 - Prefer `--device mps` for the network; if any op is unsupported on MPS
   (conv3d / avg_pool3d / circular pad on old torch), fall back to `--device cpu`
   rather than rewriting the model.
-- HPC cluster is currently under maintenance: everything here must run on the laptop.
-  Real snapshots (64/128/256/512, same seed) are on the cluster; only run the real-data
-  paths if local copies exist.
+- HPC cluster is back online (2026-09-16). Real snapshots (64/128/256/512, same seed)
+  live there; cluster sessions start from `HANDOFF.md` (state, plan, conventions, transfer
+  manifest) — read it together with this file. On the laptop, only run the real-data paths
+  if local copies exist. Training/data-file hygiene (no weights/.npy in git) applies on both.
 
 ## Working agreements
 - Run the selftests first and compare with the reference numbers before any change.

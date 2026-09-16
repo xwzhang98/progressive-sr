@@ -1880,3 +1880,13 @@ everywhere), r_delta unchanged to 3rd digit in every cell -> the mixing benefit 
 damping toward the r^2 line, no phase repair; direct regime measurably damaged. Round-2 with
 all owner fixes = clean negative; downstream rollout FT closed, chain error goes upstream.
 REPORT_9.md sec 3b written.
+
+## 2026-09-16 14:40 — HPC handoff prepared (owner: run A -> B -> C1 one at a time, all pushed)
+
+Portability pass for the cluster session: `compute_spectra.py` moved verbatim into the repo
+root (only ROOT made repo-relative; provenance in its docstring); scratchpad analysis scripts
+rescued into runs/ (fig_y64, phase3_models, fig_chain, fig_chainfull, nsteps, rf_oracle,
+rf_s9, rf128_s9) and all runs/*.py absolute paths rewritten repo-relative (verified: import
+smoke test + ast.parse on every file; eval_y64 --help runs). CLAUDE.md HPC-maintenance line
+updated; .claude/ gitignored. `HANDOFF.md` written: state, approved plan A/B/C1, reference
+numbers, conventions/gotchas, rsync manifest (git carries no weights/.npy), open threads.

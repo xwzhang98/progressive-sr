@@ -1,0 +1,117 @@
+# HANDOFF — laptop session → HPC session (2026-09-16)
+
+For a fresh Claude session on the cluster after `git pull`. Read together with `CLAUDE.md`
+(rules there still bind). This file is the session memory: where the project stands, what is
+decided, what runs next, and every portability fact the laptop session learned the hard way.
+Laptop HEAD at handoff: `7fcfb10` + this commit.
+
+## 1. State in one paragraph
+
+The full story to date is `runs/REPORT_9.md` (read it first) + `runs/RUNLOG.md` (append-only,
+every run). Headlines: (i) two-stage **residual flow** (frozen regression base + flow on the
+residual, Q_J metric) is the best model family at both 32→64 and 64→128; (ii) **RFT2 verdict
+(closed)**: fine-tuning the downstream flow on rollout inputs damps power but repairs no
+phase — chain error must be fixed upstream; (iii) **Y64 verdict**: the ideal projected label
+R Ψ₁₂₈ over-concentrates (density +11–37% vs the 128 reference, IC-clean), while the native
+64³ run is within 2–5% in-band — headroom is *phase* and k > k_Ny,64, not band power;
+(iv) **IC audit**: `nested_ic.py` achieves 1.8e-7 nesting (GenIC's Nmesh=2·Ngrid folding was
+the main culprit), but exact nesting changes the z=0 mismatch by only ~0.01 — the cross-level
+error is dynamical, so strict ICs are a *diagnostic* tool, not a training-data requirement.
+
+## 2. The approved plan (owner, 2026-09-16): A → B → C1, strictly one at a time
+
+Owner's words: "都留着吧，我们一个一个测试，记得都放到GitHub repo里然后push掉".
+Run a phase, commit+push results, report, THEN start the next. Everything (scripts, RUNLOG,
+results.json, figures) goes into the repo; weights/.npy/logs never do.
+
+**A — cluster bring-up + reference audit (measurement only; start immediately)**
+  1. Env per `hpc/README.md` §1 (CUDA torch wheel; pin versions in RUNLOG). Run BOTH
+     selftests and compare `reference_results/` (selftest slopes 2.2/4.15; 20-step CPU 16→32
+     reference loss 3.0888e-02 must be bit-identical on CPU).
+  2. Convert the real 64/128/256/512 same-seed series (`hpc/convert_snapshot.py`; check ID
+     convention on the IC snapshot first; offset via nestedness check — production data was
+     0.5 on the laptop's Box-downloaded boxes; ~1e-6 = right).
+  3. Phase 0 on the full series (`hpc/slurm_phase0.sh`; 512³ needs ~20 GB, ask ≥64 GB):
+     first 256/512-level Wiener T(k), detail-vs-linear r², multi-stream fractions.
+  4. NEW, from the Y64 verdict: (a) **convergence test** — 128 vs 256 vs 512 density in
+     k < k_Ny,64 (upgrades/demotes "128 is a reference, not truth"); (b) **Y128 = R Ψ₂₅₆ vs
+     native 128** via `runs/eval_y64.py` generalized one level up — prediction: the label
+     excess grows with multi-streaming. Both reuse `compute_spectra.py` (now at repo root).
+**B — the one label experiment (owner approved as part of the sequence)**
+  Y64-base: retrain the 32→64 regression base with label R Ψ₁₂₈ (via `restrict_spectral`),
+  keep the residual flow's target = native 64 run. Pre-registered success: in-band density
+  P/P ∈ [0.95, 1.00] AND r_δ@0.9 k_Ny,64 > 0.95 (beat both end-members). Recipe = the
+  RF_resflow recipe (runs/resflow_train.py) with the base's target swapped; λ auto-equalised
+  at step 1 then pinned (the J_flow_qj convention). Needs `data/selfsim` transferred (see §5).
+  If the flow cannot absorb the label excess → supervision alone is refuted; representation
+  route gets priority.
+**C1 — production training data (after A conventions verified)**
+  Production pipeline (2LPT GenIC, its native Nmesh=2·Ngrid — physical realism, NOT
+  nested_ic) 64/128 pairs, 16–32 seeds + 1–2 held-out test seeds; a couple of 128/256 boxes.
+  Strict-IC trios (nested_ic.py, Zel-only) only as a small diagnostic set. Then C2 (later,
+  separate decision): 64→128 full-box training incl. the weight-shared resflow variant
+  (owner pre-approved two-transition training earlier); 128→256+ needs patch cropping or the
+  map2map port — ask first (both on the ask-before list).
+
+## 3. Reference numbers the new session must not re-derive (all in RUNLOG/REPORT_9)
+
+* Selftest slopes 2.2 / 4.15 (theory 2/4). Toy 16→32 600-step CPU: baseline r=0.917 →
+  emulator r=0.994, P/P=0.993; generative P/P=1.02.
+* 32→64 (s8/s9): resflow r=0.795/0.806, Eulerian ≈1; 64→128: r=0.677/0.689 direct.
+* No-FT chain baselines (re-measured with r_δ/coherent, `runs/chain_resflow_s{8,9}.json`):
+  chained Eul@(kNy64,1.5kNy64,kNy128) = 1.268/0.994/0.614 (s8), 1.032/0.832/0.560 (s9).
+* Y64 excess 1.18–1.37 (strict IC 1.370 @0.9k_Ny,64); native 64 in-band 0.95–0.99.
+* nested_ic acceptance 1.8e-7; strict-vs-old z=0 mismatch 0.126/0.136 (32→64), 0.093/0.094.
+* Growth D(z=0)/D(z=99) = 76.7439 (this cosmology; recompute per hpc/README for new runs).
+  C_VEL = 0.52776101 km/s per kpc/h at z=99. Fields on disk in kpc/h (`--box 100000`).
+* Parameter accounting: two specialists 6.22M vs 1.56M single-stage — always state it.
+
+## 4. Conventions and gotchas (the expensive lessons)
+
+* **One training per GPU, ever** (RUNLOG 2026-09-08 incident). SLURM: exclusive GPU.
+* Chunked training: `--max-seconds` + `--resume`; `train_state.pt` carries model/EMA/opt/λ_e
+  (λ_e MUST persist across chunks — drift bug already fixed, don't reintroduce). PAUSE
+  protocol: `touch runs/PAUSE` stops the queue loop gracefully.
+* Eval flags must mirror training flags (`--regression`, `--eulerian-inputs` restored from
+  checkpoint BEFORE batcher build — both were real bugs).
+* Emulator vs generative: growth is applied ONCE to the sampled octave (double-application
+  bug fixed). Octave sampler: GenIC-oracle/full sampler closed the gen-emu gap.
+* Offset: 0 for self-run/nested_ic data, 0.5 for production Box data — always confirm via
+  the phase0 nestedness check, never assume.
+* Estimator discipline: `compute_spectra.py` (repo root, moved verbatim from the owner's
+  reviewed analysis; only ROOT made repo-relative) — interlaced CIC + window deconvolution,
+  common 256³ analysis mesh, complete shells only, no shot-noise subtraction. Use it for
+  every density claim; probes (k_Ny,c, 1.5 k_Ny,c, 2 k_Ny,c); quote BOTH boxes, never average.
+* Report style the owner expects: honest contradiction flagging (no explaining-away),
+  "current high-resolution reference" not "truth", per-mask (multi-stream/parity) splits,
+  every claim next to its control (mix0-style), one minimal next experiment with its
+  hypothesis. RUNLOG entry per run with command line + commit hash before GPU queues.
+* zsh: `for X in "a b"` does NOT word-split; `timeout` doesn't exist on macOS; long jobs via
+  the harness's background mechanism, not nohup.
+
+## 5. What git does NOT carry — transfer manifest (run from the laptop)
+
+Weights, `train_state.pt`, `.npy`, `data/` are gitignored by design. The cluster needs:
+
+```
+# training/eval fields for phase B and any laptop-comparison (2.3G + 355M):
+rsync -av data/selfsim data/nestedic <user>@<cluster>:<repo>/data/
+# optional, only for comparing against laptop-trained models (~6 MB each):
+rsync -av runs/{R_reg_phys_3k,RF_resflow,F_reg_128_3k,RF_resflow_128,J_flow_qj}/model_ema.pt \
+      --relative <user>@<cluster>:<repo>/
+```
+
+Phase A needs NO transfer (the raw snapshots already live on the cluster). Checkpoints are
+optional: B trains from scratch; the laptop numbers above serve as the comparison row.
+
+## 6. Open threads (do not silently drop)
+
+* C2 shared/weight-shared resflow + base+regression-stage2 control — owner's pending item,
+  after C1.
+* Generative-chain diversity checks and 8→16-step checks on the hard level — partially done,
+  owner's eval-layer batch item 1.
+* 2LPT for nested_ic (currently Zel-only, documented ~1e-2 difference) — only if strict
+  trios are ever used for training, which is currently NOT the plan.
+* `.claude/` is local session state, now gitignored; scratchpad scripts were rescued into
+  `runs/` (fig_y64, phase3_models, fig_chain, fig_chainfull, nsteps, rf_oracle, rf_s9,
+  rf128_s9) with paths made repo-relative — they are the provenance of every committed figure.
