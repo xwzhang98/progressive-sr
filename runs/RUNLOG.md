@@ -1842,3 +1842,13 @@ Readings for the report:
 3. Main band capped at k < k_Ny,64 per the directive; 64^3-particle densities do carry
    content beyond it (points alias), where all 64-representations differ most from 128 — a
    documented boundary, not measured here.
+
+## 2026-09-15 23:35 — fig11 + REPORT_9 draft
+
+`scratchpad fig_y64.py -> runs/fig11_y64_verdict.png`: density P/P_128 for native64 vs Y64
+(s8 solid / s9 dashed / strict-IC dotted) with regression/resflow probe markers and the
+r_delta panel; both particle Nyquists marked; analysis mesh 256^3 stated in the title.
+`runs/REPORT_9.md` drafted: directive steps 1-3 + five answers + minimal-experiment
+recommendation (Y64-base + native-64 residual flow). RFT2 three-row table pending the
+mix0 training + auto-eval (waiter armed on 'STAGE12 TRAIN DONE'); will be appended as §3b
+before morning delivery.
