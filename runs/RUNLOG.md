@@ -1947,3 +1947,38 @@ along the full (non-rfft) axes sum Hermitian pairs, so their phase is identicall
   RP = I at m=4/8 with offset 0.5 to 3e-7, z-axis phases ~0 for 128/256/512->64; the dealias
   selftest (m=2) is IDENTICAL line-for-line before/after.
 - `hpc/slurm_phase0.sh`: OFFSET default 0.5, partition RM, torch206 python, 512 IC as top-level --ic.
+
+## 2026-09-16 — Phase A.4 on the PSC series, set0 (job 1215144, RM, 2m41s, 16 GB): convergence + Y64/Y128
+
+`sbatch hpc/slurm_ylabel.sh` = `python runs/eval_ylabel.py --sets 0 --nc 64 128 --convergence` (commit b21d739).
+Estimator = compute_spectra.density_coeff/Shells verbatim, common 256^3 analysis mesh, offset 0.5 applied
+as a global +0.5 h_N shift per level before the deposit (so all levels sit at their physical positions).
+Density P/P against the reference, probes at (k_Ny,c/2, 0.75 k_Ny,c, 0.9 k_Ny,c), r_delta at 0.9 k_Ny,c:
+
+(a) convergence, band k < k_Ny,64 (reference = native 512):
+| run        | P/P @kNy32 / 0.75kNy64 / 0.9kNy64 | min..max in band | r@0.9kNy64 | 1% / 5% frontier [h/Mpc] |
+|------------|-----------------------------------|------------------|------------|--------------------------|
+| native 128 | 0.993 / 0.992 / 0.992             | 0.989 .. 0.999   | 0.9969     | 0.76 / 1.95 (= band end) |
+| native 256 | 0.999 / 0.999 / 1.000             | 0.998 .. 1.002   | 0.9996     | 1.95 / 1.95              |
+Same up to k_Ny,128 (reference 512): native 128 P/P 0.993 @kNy64, 0.983 @1.5kNy64, 0.983 @0.9kNy128
+(r 0.9956/0.986/0.977); native 256: 0.9995/0.9988/0.999 (r 0.9995/0.998/0.997).
+-> VERDICT: in the 64 band the 128 run is converged to <=1.1% in power and r>=0.996 against 512, and
+256 to <0.3%. "128 is a reference, not truth" is UPGRADED for the 64 band: 128 is truth to 1%, so the
+Y64 label excess (+10..19%) and the native-64 deficit (-3..-4%) are both real w.r.t. converged truth.
+For the 128 band the 256 run is the reference at the 0.1% level; the 128 run itself sits 1.7% low.
+
+(b) labels (reference = native 2c):
+| candidate for level c | P/P @kNy(c/2) / 0.75kNy,c / 0.9kNy,c | r@0.9kNy,c | 1% / 5% frontier | disp r(label,native) mean/last |
+|-----------------------|--------------------------------------|------------|------------------|--------------------------------|
+| native 64             | 0.957 / 0.958 / 0.973                | 0.977      | 0.32 / 1.95      | —                              |
+| Y64 = R Psi_128       | 1.097 / 1.154 / 1.188                | 0.986      | 0.26 / 0.57      | 0.916 / 0.656                  |
+| native 128            | 0.994 / 0.984 / 0.984                | 0.980      | 1.57 / 4.02      | —                              |
+| Y128 = R Psi_256      | 1.295 / 1.422 / 1.483                | 0.979      | 0.26 / 0.63      | 0.894 / 0.572                  |
+-> the HANDOFF prediction holds: the projected label over-concentrates MORE one level up (+30..48% vs
++10..19%), tracking the multi-stream fraction (phase0: 0.42 of the Lagrangian volume at 128->256 vs
+~0.3 at 64->128). Laptop numbers for Y64 (selfsim s8/s9, IC-clean 1.18..1.37) bracket the PSC set0 value.
+The native 64 run is 3-4% low in-band (laptop: 0.95..0.99) and the native 128 run 1-2% low in its band:
+the "headroom is phase and k > k_Ny,c, not band power" reading stands at both levels.
+Phase B (Y64-base) success criterion unchanged: in-band P/P in [0.95, 1.00] AND r_delta@0.9kNy64 > 0.95.
+Caveats: one set (set0); the 1% frontier of Y is 0.26 h/Mpc at both levels (the excess starts at the
+largest scales of the band, not at the Nyquist), which is the same signature as on the laptop.
