@@ -2037,3 +2037,21 @@ Consequence for the weight-shared design: the style scalar must carry the level 
 - Laptop base recipe recovered from runs/R_reg_phys_3k/results.json: nc 32 nf 64, train seeds 0..7,
   test seed 8 (s9 second box), base 24, 3000 steps, source_filter none, --regression; resflow_train.py
   = frozen base + residual flow (qj, lambda auto), train seeds 0..7, test 8.
+
+## 2026-09-16 — Phase B tooling (no training yet; waiting for the 32^3 sets 1-15)
+
+- GPU path validated on the held A100 (srun into 1216965): 16->32 20-step smoke test, baseline and step-1
+  loss bit-identical to CPU, step 20 = 3.0945e-02 (GPU kernels), 0.22 s/step.
+- `octave_flow_toy.py --label-from N`: training target := R_cube[N->nf] of the level-N run (offset-aware,
+  via restrict_spectral); the test truth stays the native nf run; dis_c/ic_f untouched. Smoke test on PSC
+  set0 (32->64, --regression --label-from 128, 40 steps): runs, 0.14 s/step at base 24 -> 3000 steps ~7 min.
+  PSC set0 baseline x0 (true octave, no filter): octave r=0.552 P/P=1.533, coarse-band r=0.9455,
+  P_eps/P=0.110, multi-stream 0.296 (vs selfsim: r 0.58-ish; the linear octave overshoots by 53% here).
+- `runs/resflow_train.py --data psc|selfsim --train-seeds --test-seeds`: dataset table (pattern + offset),
+  and it now dumps the test-box fields (`field_{truth,base,emulator,generative}.npy`, gitignored) for
+- `runs/eval_vs_ref.py <run> --set S`: density of those fields vs the native 128 of the same set with the
+  verified estimator, offset-aware; self-check with the native 64 as "prediction" reproduces the A.4 row
+  (0.957/0.958/0.973, r 0.977) exactly.
+- `hpc/run_phaseB.sh`: the four runs B0 (control base, native label) / B1 (Y64 base) / B2 (resflow on B0) /
+  B3 (resflow on B1) + EVAL, one at a time through `srun --jobid=$JOBID`. Train sets 0-7, test set 8
+  (mirrors the laptop split), 3000 steps, base 24, source_filter none (laptop recipe R_reg_phys_3k).

@@ -319,14 +319,26 @@ def make_synthetic(Nc, Nf, L, offset, seeds, rms_delta, n_index, dealias):
     return data
 
 
-def load_real(dis_pat, ic_pat, Nc, Nf, seeds):
+def load_real(dis_pat, ic_pat, Nc, Nf, seeds, label_from=None, box=None, offset=0.0):
+    """label_from=N (> Nf): the fine TARGET becomes the Fourier restriction R_{N->Nf} of the level-N run
+    (cube window, Nyquist planes zeroed, the data's grid offset) -- the Y64-base experiment (HANDOFF
+    2026-09-16, plan B). The native fine run is kept as dis_f_native for reporting; dis_c and ic_f are
+    untouched, so the source/conditioning is exactly what the native-label model sees."""
     data = []
     for s in seeds:
         dc = p0.load(dis_pat.replace("{seed}", str(s)), Nc)
         df = p0.load(dis_pat.replace("{seed}", str(s)), Nf)
         icf = p0.load(ic_pat.replace("{seed}", str(s)), Nf)
         assert dc is not None and df is not None and icf is not None, f"missing files for seed {s}"
-        data.append(dict(dis_c=dc, dis_f=df, ic_f=icf))
+        item = dict(dis_c=dc, dis_f=df, ic_f=icf)
+        if label_from:
+            assert label_from > Nf and box is not None, "--label-from needs a level above nf and the box size"
+            dl = p0.load(dis_pat.replace("{seed}", str(s)), label_from)
+            assert dl is not None, f"missing level-{label_from} file for seed {s} (--label-from)"
+            gl, gf = p0.Grid(label_from, box), p0.Grid(Nf, box)
+            item["dis_f_native"] = df
+            item["dis_f"] = p0.restrict_spectral(dl, gl, gf, p0.cube_window(gl, gf.kny), offset)
+        data.append(item)
     return data
 
 
@@ -565,6 +577,8 @@ def main():
     ap.add_argument("--dis", type=str, default=None, help="real data pattern with {N} and {seed}")
     ap.add_argument("--ic", type=str, default=None, help="real IC pattern with {N} and {seed}")
     ap.add_argument("--growth", type=float, default=1.0, help="D(z)/D(z_init) if the IC is stored at z_init")
+    ap.add_argument("--label-from", type=int, default=None,
+                    help="train on the projected label R_{N->nf} Psi_N of this higher level N instead of the native nf run (Y64-base experiment)")
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(8)))
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[100])
     ap.add_argument("--rms-delta", type=float, default=1.5, help="synthetic nonlinearity (rms delta_lin at fine level)")
@@ -643,8 +657,12 @@ def main():
     # ---- data -----------------------------------------------------------------
     t0 = time.time()
     if args.dis:
-        train = load_real(args.dis, args.ic, args.nc, args.nf, args.train_seeds)
-        test = load_real(args.dis, args.ic, args.nc, args.nf, args.test_seeds)
+        train = load_real(args.dis, args.ic, args.nc, args.nf, args.train_seeds,
+                          label_from=args.label_from, box=args.box, offset=args.offset)
+        test = load_real(args.dis, args.ic, args.nc, args.nf, args.test_seeds)   # test truth = native run
+        if args.label_from:
+            print(f"training label = R_cube[{args.label_from}->{args.nf}] of the level-{args.label_from} run "
+                  f"(offset {args.offset}); test truth stays the native {args.nf}^3 run")
     else:
         train = make_synthetic(args.nc, args.nf, args.box, args.offset, args.train_seeds, args.rms_delta, args.n_index, args.dealias)
         test = make_synthetic(args.nc, args.nf, args.box, args.offset, args.test_seeds, args.rms_delta, args.n_index, args.dealias)

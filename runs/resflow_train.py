@@ -32,8 +32,11 @@ import phase0_octaves as p0        # noqa: E402
 import octave_flow_toy as oft      # noqa: E402
 import eulerian_metric as em       # noqa: E402
 
-L, OFF, GR = 100000.0, 0.0, 76.7439
-DIS, IC = "data/selfsim/s{seed}/dis_{N}.npy", "data/selfsim/s{seed}/ic_dis_{N}.npy"
+L, GR = 100000.0, 76.7439
+DATASETS = {   # name -> (dis pattern, ic pattern, grid offset)
+    "selfsim": ("data/selfsim/s{seed}/dis_{N}.npy", "data/selfsim/s{seed}/ic_dis_{N}.npy", 0.0),
+    "psc": ("data/psc/dmo-{N}/set{seed}/PART_009/disp.npy", "data/psc/dmo-{N}/set{seed}/IC/disp.npy", 0.5),
+}
 
 
 def main():
@@ -49,14 +52,19 @@ def main():
     ap.add_argument("--max-seconds", type=float, default=None)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--data", type=str, default="selfsim", choices=sorted(DATASETS),
+                    help="selfsim (laptop, offset 0) or psc (cluster series, offset 0.5)")
+    ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(8)))
+    ap.add_argument("--test-seeds", type=int, nargs="+", default=[8])
     args = ap.parse_args()
+    DIS, IC, OFF = DATASETS[args.data]
     os.makedirs(args.out, exist_ok=True)
     torch.manual_seed(args.seed)
     dev = torch.device(args.device)
 
     sc = oft.Scaffold(args.nc, args.nf, L, OFF, 1.0, dev, window="cube")
-    tr = oft.load_real(DIS, IC, args.nc, args.nf, list(range(8)))
-    te = oft.load_real(DIS, IC, args.nc, args.nf, [8])
+    tr = oft.load_real(DIS, IC, args.nc, args.nf, args.train_seeds)
+    te = oft.load_real(DIS, IC, args.nc, args.nf, args.test_seeds[:1])   # residual target = NATIVE fine run
     sc.fit_linear_power([it["ic_f"] * GR for it in tr])
     rng = np.random.default_rng(args.seed)
     ba = oft.Batcher(sc, tr, rng, augment_on=True, growth=GR, octave_transverse=True)
@@ -154,8 +162,12 @@ def main():
         rms = float((((f - x1) ** 2).mean()) ** 0.5)
         res[nm] = dict(r_high=r_, ratio_P_high=pp, rms=rms, eul=eul)
         print(f"{nm:11s} r={r_:.4f} P/P={pp:.4f} rms={rms:.3f} | Eul {[round(x,3) for x in eul]}")
+    res["args"] = vars(args)
     with open(os.path.join(args.out, "results_resflow.json"), "w") as fjs:
         json.dump(res, fjs, indent=1)
+    # test-box fields in box units (kpc/h here), for the density-vs-reference evaluation (gitignored .npy)
+    for nm, f in (("truth", x1), ("base", xb), ("emulator", pred), ("generative", predg)):
+        np.save(os.path.join(args.out, f"field_{nm}.npy"), (f[0] * hf).cpu().numpy().astype(np.float32))
 
 
 if __name__ == "__main__":
