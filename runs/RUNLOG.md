@@ -2566,3 +2566,36 @@ the winner of Stage 7), weight sharing +0.05, `--jac-weight` 1.2 +0.055, Q_E for
 negative, Y64 label for the base 0, dedicated correction loss 0. Truth-level references: native 64 run 0.998, true
 conditional samples 1.01 (64->128). No loss that is an expectation of a pointwise error closes the gap.
 Provenance: runs/cic_probe.log, runs/G_reg_psc14_lowband/results.json, runs/RFC_resflow_psc14_*/{results_resflow,vs_ref}.json.
+
+## 2026-09-17 17:40 — Capacity probe (base 48) and coarse-VELOCITY inputs at 32->64 (owner: "1和2一起做"): both real, both mild
+
+Split 0-13/14, 3000 steps, batch 2, HENON A100; `hpc/run_vel_probe.sh` (commit d84942b). Velocity inputs (owner approved
+2026-09-17, the "adding velocities" ask-first item, INPUT side only): 9 extra conditioning channels
+d_i (v_c / aHf)_j - D_ij from the coarse run's peculiar velocity (prolonged like Psi_c; aHf = 0.0497884 km/s per kpc/h at
+z=0 — checked on data: <v.Psi>/<Psi^2> = 0.049-0.052 at k < 0.07 k_Ny,64, so vel.npy is peculiar km/s at a=1), zero in
+linear theory, augmented jointly with the displacements; default path bit-identical (20-step CPU test 3.0882e-02).
+| regression base (set14)            | params | octave r | octave P/P | rms/h_f (MS/SS)     | coarse band r | coarse band P_eps/P |
+|------------------------------------|--------|----------|------------|---------------------|---------------|---------------------|
+| base 24 (runs/R_reg_psc14)         | 1.56M  | 0.831    | 0.707      | 0.307 (0.371/0.276) | 0.9858        | 0.0280              |
+| base 24, loss on coarse band only  | 1.56M  | (0.640)  | (2.0)      | —                   | 0.9862        | 0.0272              |
+| base 48 (runs/R_reg_psc14_b48)     | 5.85M  | 0.852    | 0.758      | 0.290 (0.353/0.259) | 0.9874        | 0.0249              |
+| base 24 + velocity (runs/V_reg_psc14) | 1.56M | 0.836   | 0.712      | 0.302 (0.365/0.272) | 0.9865        | 0.0265              |
+Residual flow on the velocity base, both stages with velocity inputs (runs/VF_resflow_psc14) vs the control pair:
+| pair (set14)            | r_lag | octave P/P | rms   | P_delta/P vs native 128 @kNy32/0.75/0.9 kNy64 | r_delta@0.9 | generative P_delta/P, r_delta |
+|-------------------------|-------|------------|-------|-----------------------------------------------|-------------|-------------------------------|
+| control (no velocity)   | 0.796 | 0.992      | 0.352 | 0.984 / 0.872 / 0.805                         | 0.906       | 0.984/0.868/0.799, 0.85       |
+| velocity inputs         | 0.803 | 0.994      | 0.347 | 0.949 / 0.821 / 0.754                         | 0.918       | 0.936/0.814/0.742, 0.867      |
+| oracle coarse band      | 0.868 | 0.969      | 0.239 | 0.968 / 0.912 / 0.874                         | 0.967       | 0.934/0.832/0.780, 0.946      |
+Reading:
+* Capacity IS a lever, a mild one: 3.75x the parameters buy +0.021 in octave r, -11% in correction-band error power,
+  -5.5% in rms. (The coarse-band-only loss bought -3%: it is total capacity, not its allocation, that matters.)
+* The coarse velocity in this form is a smaller lever: +0.005 in r, -5% in correction-band error power. Through the
+  residual flow it raises r_delta by +0.012 (0.906 -> 0.918; base 0.904 -> 0.917) — the first thing in this project,
+  other than the oracle, that moves r_delta at all — but the density power does not improve (0.754 vs 0.805 at
+  0.9 k_Ny,64; one run each, run-to-run noise ~0.01, so the drop is probably real and unexplained).
+* Against the oracle bound (correction-band error -> 0 gives r_delta 0.967) both levers cover ~1/5 of the way in
+  r_delta at best. The correction-band error of 2.5-2.8% is robust against capacity x3.75, loss allocation and the
+  coarse velocity: most of it is genuinely not determined by the coarse run (the chaotic, IC-octave-dependent part of
+  the coarse run's own Nyquist error), consistent with Var(fine | F_n) of RUNLOG 00:00 (1-9% across the band).
+Not done (would complete the picture, owner's call): base 48 + velocity, and a residual flow on the base-48 base.
+Provenance: runs/vel_probe.log, runs/{R_reg_psc14_b48,V_reg_psc14}/results.json, runs/VF_resflow_psc14/{results_resflow,vs_ref}.json.
