@@ -39,15 +39,18 @@ L, OFF, GR = 100000.0, 0.5, 76.7439
 DIS, IC = "data/psc/dmo-{N}/set{seed}/PART_009/disp.npy", "data/psc/dmo-{N}/set{seed}/IC/disp.npy"
 
 
+DEV = torch.device("cpu")
+
+
 def load_model(path):
     ck = torch.load(path, map_location="cpu")
     m = oft.UNet3D(cin=12, cout=3, base=int(ck.get("base", 24)))
-    m.load_state_dict(ck["state_dict"]); m.eval()
+    m.load_state_dict(ck["state_dict"]); m.eval(); m.to(DEV)
     return m
 
 
 def build_level(Nc, Nf, train, test):
-    sc = oft.Scaffold(Nc, Nf, L, OFF, 1.0, torch.device("cpu"), window="cube")
+    sc = oft.Scaffold(Nc, Nf, L, OFF, 1.0, DEV, window="cube")
     tr = oft.load_real(DIS, IC, Nc, Nf, train)
     te = oft.load_real(DIS, IC, Nc, Nf, [test])
     sc.fit_linear_power([it["ic_f"] * GR for it in tr])
@@ -59,11 +62,11 @@ def predict(pair, sc, items):
     b = oft.Batcher(sc, items, np.random.default_rng(0), augment_on=False, growth=GR, octave_transverse=True)
     x0, x1, Pc, D = b.make(items, eta="true")
     with torch.no_grad():
-        z = torch.zeros(1)
+        z = torch.zeros(1, device=DEV)
         xb = x0 + baseM(oft.net_input(x0, Pc, D), z, z)
         pred = oft.sample_flow(flowM, xb, Pc, D, z, nsteps=8)
     hf = sc.hf
-    return (pred[0] * hf).numpy().astype(np.float32), (x1[0] * hf).numpy().astype(np.float32)
+    return (pred[0] * hf).cpu().numpy().astype(np.float32), (x1[0] * hf).cpu().numpy().astype(np.float32)
 
 
 def shell_slope(g, num_field, den_field):
@@ -82,9 +85,12 @@ def main():
     ap.add_argument("--out", default="runs/chain_psc14")
     ap.add_argument("--models", nargs=4, default=["runs/R_reg_psc14", "runs/RF_resflow_psc14",
                                                    "runs/F_reg_128_psc", "runs/RF_resflow_128_psc"])
+    ap.add_argument("--device", default="cpu")
     args = ap.parse_args()
+    global DEV
+    DEV = torch.device(args.device)
     os.makedirs(args.out, exist_ok=True)
-    torch.set_num_threads(max(1, os.cpu_count() // 2))
+    torch.set_num_threads(max(1, (os.cpu_count() or 2) // 2))
     pA = (load_model(f"{args.models[0]}/model_ema.pt"), load_model(f"{args.models[1]}/model_ema.pt"))
     pB = (load_model(f"{args.models[2]}/model_ema.pt"), load_model(f"{args.models[3]}/model_ema.pt"))
     scA, teA = build_level(32, 64, args.train_seeds, args.set)
