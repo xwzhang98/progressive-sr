@@ -2454,3 +2454,39 @@ through band mismatch, part of the power deficit originate — consistent with "
 Provenance: runs/hybrid_set14.{json,log}; runs/M_{resflow,reg2}_psc_set15/.
 
 Addendum (2026-09-17 10:55): shared reg2, set15, 64->128 vs native 256, emulator:  (the table row above had only the Lagrangian numbers when it was written).
+
+## 2026-09-17 11:20 — Oracle-coarse diagnostic (32->64): the r_delta ceiling is 100% the correction band; the power deficit is only ~1/3 upstream
+
+`--oracle-coarse` (commit a7b3948; DIAGNOSTIC, not deployable): the conditioning field is R_cube Psi_f (the fine run's own
+coarse band = the Phase-B label Y) instead of the coarse run, in training AND test; everything else = S32a/S32b
+(split 0-13/14, base 24, 3000 steps, batch 2, octave-sampler full; HENON A100, 0.12 / 0.16 s/step).
+runs/O_reg_psc14 (regression base) -> runs/OF_resflow_psc14 (residual flow, qj, lambda auto).
+| 32->64, set14                  | r_lag | P/P_lag | rms/h_f | P_delta/P vs native 128 @kNy32/0.75/0.9 kNy64 | r_delta@0.9 |
+|--------------------------------|-------|---------|---------|-----------------------------------------------|-------------|
+| native 64 run                  |   —   |    —    |    —    | 0.986 / 0.987 / 0.998                         | 0.969       |
+| specialist base (coarse RUN)   | 0.831 | 0.707   | 0.307   | 1.207 / 1.332 / 1.455                         | 0.904       |
+| ORACLE base                    | 0.894 | 0.790   | 0.204   | 1.148 / 1.279 / 1.385                         | 0.966       |
+| specialist resflow (coarse RUN)| 0.796 | 0.992   | 0.352   | 0.984 / 0.872 / 0.805                         | 0.906       |
+| shared resflow (coarse RUN)    | 0.806 | 1.004   | 0.343   | 0.983 / 0.903 / 0.853                         | 0.907       |
+| ORACLE resflow, emulator       | 0.868 | 0.969   | 0.239   | 0.968 / 0.912 / 0.874                         | 0.967       |
+| ORACLE resflow, generative     | 0.315 | 0.857   | 0.448   | 0.934 / 0.832 / 0.780                         | 0.946       |
+(oracle x0: coarse band r = 1.0000, P_eps/P = 4e-9 as it must; after the base 1.4e-4.)
+Reading against the pre-stated hypothesis ("if the density returns to ~1 the deficit is all upstream"):
+1. r_delta: 0.906 -> 0.967, i.e. exactly the native 64 run's own coherence with 128 (0.969). The whole r_delta ceiling
+   of every model in this project is the correction band (the coarse run's Nyquist error the model cannot undo);
+   with a perfect coarse band the detail generator costs NO coherence in k < k_Ny,64. Hybrid finding 5 confirmed
+   by training, not just by band-swapping.
+2. Power: the deficit at 0.9 k_Ny,64 shrinks from -19.5% (specialist) / -14.7% (shared) to -12.6%. So the hypothesis is
+   REFUTED as stated: only about one third of the deficit is upstream; two thirds remain with a PERFECT coarse band.
+   They belong to the detail generator itself: r_lag 0.87 means 25% of its detail power is not matched to the (true)
+   coarse band, and unmatched detail power smears (hybrid findings 2-4). The base (shrunk detail) overshoots by +38%,
+   the flow (full power, part of it unmatched) undershoots by -13%: the truth needs full power AND matched phases.
+3. Lagrangian: the oracle raises r_lag from 0.80 to 0.87 and halves the rms error (0.352 -> 0.239 h_f): the coarse run's
+   error is the single largest error source of the 32->64 step in every metric.
+Consequences: (a) upstream first — a better correction band buys all of r_delta and a third of the power; the label
+R Psi_2c of Phase B is the right TARGET for a dedicated correction stage (Phase B tested it as a label for the whole
+base, where it was diluted; as the conditioning field it is worth +0.06 in r_delta); (b) the remaining -13% needs the
+detail to be phase-matched to the coarse band beyond what MSE/flow matching with the Q_J form delivers; the approved
+`--jac-weight` moved the single-stage flow monotonically in the right direction (RUNLOG 2026-09-10) and has not been
+tried on the residual flow or with an oracle coarse band — that is the cheapest next probe (15 min at 32->64).
+Provenance: runs/O_reg_psc14/results.json, runs/OF_resflow_psc14/{results_resflow,vs_ref}.json.
