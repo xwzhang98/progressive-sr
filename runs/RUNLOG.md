@@ -2234,3 +2234,43 @@ the learned base F_reg_128_psc, and P_delta/P_true, r_delta of each TRUE conditi
 §4 — chain martingale test (`runs/chain_martingale.py --set 14`, CPU, running): 32->64->128 with the
 production-split resflow pairs, correction-band regression slopes beta/gamma/kappa/gamma_D per shell and
 the orthogonality check E|e_chain|^2 vs E|e1|^2 + E|eps2|^2; fields dumped for eval_vs_ref vs native 256.
+
+## 2026-09-16 23:50 — §4 result: the chain error is NOT a martingale-difference sum; it is the persistence of the upstream low-k error
+
+`python runs/chain_martingale.py --set 14 --out runs/chain_psc14` (CPU, 35 min; commit 76b5a3d). 32->64->128 with the
+production-split resflow pairs, emulator mode at both steps, test set 14. Per-shell regression slopes in the
+CORRECTION band (64 band of the 128 grid; R = cube restriction 128->64; e1 = step-1 output - true 64;
+eps2 = (R chained - R true128) - e1; e_D = R direct - R true128):
+| k/kNy,64 | beta (pass-through of e1) | gamma (eps2 on e1) | kappa (eps2 on step-1 output) | gamma_D (e_D on true 64) | rho (eps2 on e_D) | P_e1 | P_eps2 | P_e_chain | P_e_D |
+|---|---|---|---|---|---|---|---|---|---|
+| 0.25 | 0.850 | -0.154 | -0.006 | -0.001 | 0.85 | 1.31e12 | 3.49e11 | 1.26e12 | 1.97e11 |
+| 0.50 | 0.810 | -0.224 | -0.039 |  0.002 | 0.77 | 6.55e11 | 2.66e11 | 6.28e11 | 1.21e11 |
+| 0.75 | 0.473 | -0.592 | -0.158 |  0.003 | 0.81 | 2.31e11 | 2.02e11 | 1.59e11 | 7.06e10 |
+| 0.91 | 0.322 | -0.751 | -0.265 |  0.000 | 0.83 | 1.76e11 | 1.81e11 | 9.28e10 | 5.51e10 |
+| 0.97 | 0.278 | -0.792 | -0.299 |  0.004 | 0.84 | 1.68e11 | 1.76e11 | 7.77e10 | 5.09e10 |
+Band totals (k < 0.97 kNy,64): E|e1|^2 = 4.46e16, E|eps2|^2 = 2.82e16, sum 7.28e16, E|e_chain|^2 = 3.67e16
+(2<e1,eps2> = -3.61e16), direct step E|e_D|^2 = 1.07e16. Step-1 output vs true 64: P_err/P_true = 0.02 / 0.22 /
+0.43 / 0.60 / 0.67 at 0.25 / 0.5 / 0.75 / 0.91 / 0.97 kNy,64 (r 0.990 / 0.888 / 0.781 / 0.694 / 0.659), P/P 0.96-1.00.
+Octave band of the 128 grid, error power / P_true at 1.09 / 1.5 / 1.91 kNy,64: direct 0.35 / 0.65 / 0.93,
+chained 0.47 / 0.79 / 1.06. Density vs native 256 (eval_vs_ref, k < kNy,128): direct 0.969 / 0.824 / 0.688 at
+(kNy,64, 0.75, 0.9 kNy,128), r_delta@0.9 = 0.904; CHAINED 1.033 / 0.849 / 0.687, r_delta@0.9 = 0.716 (laptop s9 chain:
+1.032 / 0.832 / 0.560 at kNy64 / 1.5 kNy64 / kNy128 — same picture).
+Reading:
+1. gamma_D ~ 0 at every k: given its OWN input the 64->128 step is conditionally unbiased (its error is a
+   martingale difference w.r.t. the input, in the linear-regression sense). That is exactly why it cannot repair
+   an upstream error it cannot tell from signal: at k < 0.5 kNy,64 the step-1 error passes through with beta =
+   0.81-0.85 and the innovation is small (kappa ~ 0).
+2. Near the coarse Nyquist (0.75-0.97 kNy,64) beta drops to 0.47-0.28 and gamma to -0.6..-0.8: this is the step's
+   correction band, where it is trained to overwrite the coarse run's O(1) Nyquist error, so it overwrites the
+   upstream error too (70% repaired). The chain error is SUB-additive there (E|e_chain|^2 < E|e1|^2).
+3. Therefore the chain does NOT accumulate as a random walk (sqrt N) nor as an unbiased sum: the coarse-band chain
+   error is 3.4x the direct step's own error, and it is DOMINATED by the persistence of step 1's error at
+   k < 0.5 kNy,64 (P_err/P = 0.02-0.22 there, r 0.99-0.89), which every later step will carry unchanged (beta ~ 0.85
+   per step -> geometric persistence, error grows with the number of steps in which that band is "coarse band").
+   rho = 0.8: the innovation on a chained input is the direct step's own error — the steps make correlated
+   errors, another reason the martingale accounting fails. Consequence for 64->512: the 64-band error of the
+   first step is the floor of the whole chain; fixing it upstream (the 32->64 step's r = 0.66 at its Nyquist
+   -> 0.89 at half its Nyquist) buys more than anything downstream, as the RFT2 verdict already said.
+4. Phase loss compounds through the octave: r_delta at 0.9 kNy,128 falls from 0.904 (direct) to 0.716 (chained) —
+   the new octave is synthesised from a coarse field whose own top band has r 0.66.
+Provenance: runs/chain_psc14/chain_martingale.json, runs/chain_psc14/{direct,chained}/vs_ref.json, runs/chain_psc14.log.
