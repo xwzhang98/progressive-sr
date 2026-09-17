@@ -2521,3 +2521,48 @@ Verdict: `--jac-weight` is not the fix for the density deficit of the residual f
 can be stacked (w ~ 0.4-1.2), not a route to P_delta/P = 1. The oracle-coarse budget stands: all of r_delta and about
 a third of the power are upstream (correction band); the remaining ~ -13% is detail/coarse phase matching that a
 pointwise-J loss on the endpoint does not enforce.
+
+## 2026-09-17 16:30 — Two probes (owner-approved plan of the session): correction-stage headroom = NONE; `--cic-weight` on the residual flow = WRONG SIGN
+
+`hpc/run_cic_probe.sh` (commit 80b652c + launcher), 32->64, split 0-13/14, HENON A100, one run at a time.
+
+(1) Headroom test for a dedicated correction stage: `octave_flow_toy.py --regression --loss-band low` (MSE on the coarse
+band of the error only; runs/G_reg_psc14_lowband) vs the normal base (runs/R_reg_psc14):
+| model                         | coarse band r | coarse band P_eps/P |
+|-------------------------------|---------------|---------------------|
+| x0 (no network)               | 0.9458        | 0.109               |
+| base, loss on all k           | 0.9858        | 0.0280              |
+| base, loss on the coarse band | 0.9862        | 0.0272              |
+-> giving the network's whole capacity to the correction band buys 3% of the error power: NO-GO. The correction-band
+error is not a capacity-sharing problem; it is what this network can infer from (P Psi_c, D_ij, octave). The oracle
+bound (r_delta 0.967) is not reachable by dedicating a stage with the same inputs.
+
+(2) `runs/resflow_train.py --cic-weight w --cic-compress {log1p,sqrt,lin} --cic-factor {1,2}`: MSE between compressed CIC
+densities of q + x1_pred and q + x1 (eulerian_metric.cic_deposit, differentiable), on top of the Q_J form; frozen base
+runs/R_reg_psc14; control = runs/RF_resflow_psc14. Density vs native 128 (set14), emulator, P/P at k_Ny,32/0.75/0.9 k_Ny,64:
+| compress / mesh | w    | w*L_cic / L_flow (end) | P_delta/P             | r_delta@0.9 | r_lag | octave P/P_lag | generative P_delta/P @0.9 |
+|-----------------|------|------------------------|-----------------------|-------------|-------|----------------|---------------------------|
+| control         | 0    | —                      | 0.984 / 0.872 / 0.805 | 0.906       | 0.796 | 0.992          | 0.799                     |
+| log1p, f1       | 3    | 0.14                   | 0.970 / 0.850 / 0.779 | 0.904       | 0.796 | 0.998          | 0.775                     |
+| log1p, f1       | 30   | 1.3                    | 0.883 / 0.708 / 0.613 | 0.906       | 0.790 | 1.022          | 0.612                     |
+| log1p, f2       | 1    | 0.36                   | 0.962 / 0.838 / 0.764 | 0.907       | 0.796 | 0.992          | 0.759                     |
+| log1p, f2       | 10   | 3.3                    | 0.917 / 0.755 / 0.661 | 0.906       | 0.792 | 1.006          | 0.654                     |
+| sqrt, f1        | 3    | 0.24                   | 0.906 / 0.745 / 0.656 | 0.905       | 0.791 | 1.008          | 0.653                     |
+| sqrt, f1        | 30   | 2.1                    | 0.792 / 0.570 / 0.458 | 0.895       | 0.783 | 1.044          | 0.460                     |
+| lin, f1         | 0.03 | 0.09                   | 0.824 / 0.609 / 0.501 | 0.895       | 0.789 | 1.028          | 0.504                     |
+| lin, f1         | 0.3  | 0.88                   | 0.739 / 0.506 / 0.397 | 0.876       | 0.785 | 1.101          | 0.404                     |
+Hypothesis of the session ("the deposit sees the band matching that pointwise J cannot; expect >= +0.10 at 0.9 k_Ny,64"):
+REFUTED, with the opposite sign, monotonically in the weight, in every compression, and the more peak-weighted the
+compression the worse (lin at w = 0.03, with the term only 9% of the flow loss, already costs -0.30). Mechanism, in
+hindsight: a pointwise MSE on the density is itself a regression to the mean in Eulerian space — when a halo's position
+and shape are uncertain, a sharp peak slightly misplaced is penalised twice, so the loss prefers SMEARED density. The
+network obliges in the cheapest way: it ADDS incoherent displacement power (Lagrangian octave P/P rises to 1.02-1.10
+while P_delta falls), exactly the smearing mechanism of the hybrid-detail test. The 2x mesh changes nothing of substance.
+This is consistent with the owner's 2026-09-10 decision to drop the CIC loss; the session's argument for reopening it
+overlooked the double-penalty effect. `--cic-weight` stays in the script as an option, default 0.
+
+State of the loss-shaping ledger for the one-shot map (32->64, 0.9 k_Ny,64, control 0.805): Q_J form (in the control;
+the winner of Stage 7), weight sharing +0.05, `--jac-weight` 1.2 +0.055, Q_E form negative (REPORT_7), CIC-MSE strongly
+negative, Y64 label for the base 0, dedicated correction loss 0. Truth-level references: native 64 run 0.998, true
+conditional samples 1.01 (64->128). No loss that is an expectation of a pointwise error closes the gap.
+Provenance: runs/cic_probe.log, runs/G_reg_psc14_lowband/results.json, runs/RFC_resflow_psc14_*/{results_resflow,vs_ref}.json.

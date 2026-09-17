@@ -170,3 +170,21 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
   conditional samples (30 min per 128^3 run), the shared operator for the 64->512 chain, and first the
   training-free localisation `runs/hybrid_detail_test.py` (what in the octave detail carries the density).
   Per-box scatter: quote set14 AND set15 before any claim.
+
+## 10. Cluster session 2026-09-17 — what the deficit is, and what does NOT fix it (RUNLOG 10:50 .. 16:30)
+
+* Second box (set15) confirms every C2 statement (scatter +-0.05 in P/P, +-0.03 in r_delta).
+* Hybrid-detail test (`runs/hybrid_detail_test.py`): the true coarse band with NO detail has an excess (+6..16%) and
+  r_delta 0.95; phase-randomised true detail destroys the power (0.14); even the detail of a TRUE conditional sample on
+  a 1-9%-different coarse band costs -27% = the flow's deficit. Density power = mutual coherence of the bands.
+* Oracle-coarse (`--oracle-coarse`): r_delta 0.906 -> 0.967 (= the native run's own): the r_delta ceiling is 100% the
+  correction band; but only ~1/3 of the power deficit is upstream (-19.5% -> -12.6%).
+* Loss-shaping ledger at 32->64 (0.9 k_Ny,64, control 0.805): weight sharing +0.05, `--jac-weight` 1.2 +0.055 (shallow,
+  ~+0.02 per decade), Q_E negative (REPORT_7), `--cic-weight` strongly NEGATIVE in every compression (double penalty ->
+  the net adds incoherent displacement power), dedicated correction-band loss 0 (capacity is not the limit), Y64 label 0.
+* Therefore: no expectation-of-a-pointwise-error loss closes the gap, and the correction band is limited by the INPUT
+  information, not by capacity or loss. Candidates that remain, all the owner's call: (a) more input information for
+  the correction band — the coarse run's VELOCITIES are the obvious one (ask-before list); (b) a capacity/receptive-field
+  probe for the detail coherence (cheap, not yet done); (c) accept the two-stage shared operator + jac-weight ~1 as the
+  production model and move to the 64->512 chain (needs patch cropping: ask-before list).
+* GPU: HENON hold job 1216965 expires ~2026-09-18 16:30; TWIG released.
