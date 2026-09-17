@@ -2490,3 +2490,34 @@ detail to be phase-matched to the coarse band beyond what MSE/flow matching with
 `--jac-weight` moved the single-stage flow monotonically in the right direction (RUNLOG 2026-09-10) and has not been
 tried on the residual flow or with an oracle coarse band — that is the cheapest next probe (15 min at 32->64).
 Provenance: runs/O_reg_psc14/results.json, runs/OF_resflow_psc14/{results_resflow,vs_ref}.json.
+
+## 2026-09-17 12:10 — Option 1 (owner): `--jac-weight` on the residual flow, 32->64 dose-response — real, monotonic, shallow
+
+`runs/resflow_train.py --jac-weight w` (commit 526af7d): oft.jac_loss (MSE on asinh J) on the flow's endpoint prediction
+x1p = x_t + (1-t) v, ON TOP of the Q_J form (lambda auto ~0.0156). Same frozen base (runs/R_reg_psc14), split 0-13/14,
+3000 steps, batch 2, HENON A100 (0.16-0.17 s/step); control = runs/RF_resflow_psc14 (w = 0). runs/RFJ_resflow_psc14_j*.
+Density vs native 128 (set14), P/P at k_Ny,32 / 0.75 / 0.9 k_Ny,64:
+| jac-weight | w*L_jac / L_flow (end) | emulator              | r_delta@0.9 | generative            | r_lag | octave P/P_lag | rms/h_f |
+|------------|------------------------|-----------------------|-------------|-----------------------|-------|----------------|---------|
+| 0          | —                      | 0.984 / 0.872 / 0.805 | 0.906       | 0.984 / 0.868 / 0.799 | 0.796 | 0.992          | 0.352   |
+| 0.012      | 0.013                  | 0.986 / 0.877 / 0.812 | 0.904       | 0.988 / 0.872 / 0.805 | 0.797 | 0.992          | 0.352   |
+| 0.04       | 0.044                  | 0.985 / 0.872 / 0.807 | 0.907       | 0.987 / 0.869 / 0.799 | 0.797 | 0.992          | 0.352   |
+| 0.12       | 0.13                   | 0.995 / 0.889 / 0.827 | 0.906       | 0.995 / 0.884 / 0.816 | 0.797 | 0.983          | 0.351   |
+| 0.4        | 0.43                   | 0.994 / 0.890 / 0.828 | 0.907       | 0.998 / 0.890 / 0.826 | 0.799 | 0.978          | 0.349   |
+| 1.2        | 1.26                   | 1.011 / 0.916 / 0.860 | 0.908       | 1.011 / 0.910 / 0.852 | 0.802 | 0.966          | 0.345   |
+(generative octave P/P_lag: 0.966 / 0.964 / 0.966 / 0.957 / 0.950 / 0.938.)
+Reading:
+* The biased term works in the right direction and monotonically over two decades (below w ~ 0.05 it is inside the
+  run-to-run noise, +-0.005), with no Lagrangian cost — r_lag and rms even improve slightly (0.796 -> 0.802, 0.352 ->
+  0.345). The bias signature of notes 5.5/5.7d is there and small: the Lagrangian octave P/P drifts 0.992 -> 0.966
+  (emulator) and 0.966 -> 0.938 (generative), and the density at k_Ny,32 starts to exceed 1 (1.011) at w = 1.2.
+* But the lever is SHALLOW: ~+0.02 per decade of weight at 0.9 k_Ny,64. With the jac term already LARGER than the flow
+  loss (w = 1.2) the deficit goes from -19.5% to -14.0%: a quarter of the gap, the same gain that weight sharing
+  alone gives (shared resflow 0.853 with w = 0). Extrapolating the log-slope, closing the gap would need w ~ 10^3.
+  On the laptop's single-stage flow (no Q_J form) w = 0.04 moved the same probe by +0.04..0.07; here the Q_J form
+  has already taken that gain, and the jac loss adds little on top.
+* r_delta does not move (0.904-0.908), as the oracle-coarse diagnostic predicts: it lives in the correction band.
+Verdict: `--jac-weight` is not the fix for the density deficit of the residual flow. It is a harmless +0.02..0.05 that
+can be stacked (w ~ 0.4-1.2), not a route to P_delta/P = 1. The oracle-coarse budget stands: all of r_delta and about
+a third of the power are upstream (correction band); the remaining ~ -13% is detail/coarse phase matching that a
+pointwise-J loss on the endpoint does not enforce.
