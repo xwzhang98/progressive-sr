@@ -75,6 +75,7 @@ def main():
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[8])
     ap.add_argument("--oracle-coarse", action="store_true", help="DIAGNOSTIC: condition on R Psi_f, train and test")
     ap.add_argument("--velocity-inputs", action="store_true", help="base AND flow condition also on the coarse velocity (9 channels)")
+    ap.add_argument("--flow-base", type=int, default=24, help="width of the residual-flow UNet (capacity probe)")
     ap.add_argument("--cic-weight", type=float, default=0.0,
                     help="approved NONLINEAR Eulerian loss on the x-prediction (CIC density of q + x1_pred vs truth); a controlled "
                          "bias for the flow -- read GENERATIVE mode too")
@@ -113,7 +114,7 @@ def main():
         z = torch.zeros(x0.shape[0], device=dev)
         return x0 + baseM(oft.net_input(x0, Pc, D), z, z)     # one Euler step at t=0
 
-    model = oft.UNet3D(cin=CIN, cout=3, base=24).to(dev)
+    model = oft.UNet3D(cin=CIN, cout=3, base=args.flow_base).to(dev)
     print(f"residual-flow params: {sum(p.numel() for p in model.parameters())/1e6:.2f}M; base frozen")
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     ema = {k: v.detach().clone() for k, v in model.state_dict().items()}
@@ -170,7 +171,7 @@ def main():
             return
 
     model.load_state_dict(ema); model.eval()
-    torch.save({"state_dict": model.state_dict(), "base": 24, "lam": lam, "args": vars(args)},
+    torch.save({"state_dict": model.state_dict(), "base": args.flow_base, "lam": lam, "args": vars(args)},
                os.path.join(args.out, "model_ema.pt"))
 
     # ---- evaluation: emulator and generative, Lagrangian + Eulerian probes -------------
