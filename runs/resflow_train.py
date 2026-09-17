@@ -56,6 +56,7 @@ def main():
                     help="selfsim (laptop, offset 0) or psc (cluster series, offset 0.5)")
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(8)))
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[8])
+    ap.add_argument("--oracle-coarse", action="store_true", help="DIAGNOSTIC: condition on R Psi_f, train and test")
     args = ap.parse_args()
     DIS, IC, OFF = DATASETS[args.data]
     os.makedirs(args.out, exist_ok=True)
@@ -63,8 +64,9 @@ def main():
     dev = torch.device(args.device)
 
     sc = oft.Scaffold(args.nc, args.nf, L, OFF, 1.0, dev, window="cube")
-    tr = oft.load_real(DIS, IC, args.nc, args.nf, args.train_seeds)
-    te = oft.load_real(DIS, IC, args.nc, args.nf, args.test_seeds[:1])   # residual target = NATIVE fine run
+    tr = oft.load_real(DIS, IC, args.nc, args.nf, args.train_seeds, box=L, offset=OFF, oracle_coarse=args.oracle_coarse)
+    te = oft.load_real(DIS, IC, args.nc, args.nf, args.test_seeds[:1],   # residual target = NATIVE fine run
+                       box=L, offset=OFF, oracle_coarse=args.oracle_coarse)
     sc.fit_linear_power([it["ic_f"] * GR for it in tr])
     rng = np.random.default_rng(args.seed)
     ba = oft.Batcher(sc, tr, rng, augment_on=True, growth=GR, octave_transverse=True)

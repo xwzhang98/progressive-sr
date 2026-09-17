@@ -319,7 +319,7 @@ def make_synthetic(Nc, Nf, L, offset, seeds, rms_delta, n_index, dealias):
     return data
 
 
-def load_real(dis_pat, ic_pat, Nc, Nf, seeds, label_from=None, box=None, offset=0.0):
+def load_real(dis_pat, ic_pat, Nc, Nf, seeds, label_from=None, box=None, offset=0.0, oracle_coarse=False):
     """label_from=N (> Nf): the fine TARGET becomes the Fourier restriction R_{N->Nf} of the level-N run
     (cube window, Nyquist planes zeroed, the data's grid offset) -- the Y64-base experiment (HANDOFF
     2026-09-16, plan B). The native fine run is kept as dis_f_native for reporting; dis_c and ic_f are
@@ -331,6 +331,13 @@ def load_real(dis_pat, ic_pat, Nc, Nf, seeds, label_from=None, box=None, offset=
         icf = p0.load(ic_pat.replace("{seed}", str(s)), Nf)
         assert dc is not None and df is not None and icf is not None, f"missing files for seed {s}"
         item = dict(dis_c=dc, dis_f=df, ic_f=icf)
+        if oracle_coarse:
+            # DIAGNOSTIC upper bound (RUNLOG 2026-09-17, hybrid-detail test): condition on the fine run's own
+            # coarse band R_{Nf->Nc} Psi_f instead of the coarse run -- not deployable, the correction is zero.
+            assert box is not None, "--oracle-coarse needs the box size"
+            gF, gC = p0.Grid(Nf, box), p0.Grid(Nc, box)
+            item["dis_c_native"] = dc
+            item["dis_c"] = p0.restrict_spectral(df, gF, gC, p0.cube_window(gF, gC.kny), offset)
         if label_from:
             assert label_from > Nf and box is not None, "--label-from needs a level above nf and the box size"
             dl = p0.load(dis_pat.replace("{seed}", str(s)), label_from)
@@ -577,6 +584,8 @@ def main():
     ap.add_argument("--dis", type=str, default=None, help="real data pattern with {N} and {seed}")
     ap.add_argument("--ic", type=str, default=None, help="real IC pattern with {N} and {seed}")
     ap.add_argument("--growth", type=float, default=1.0, help="D(z)/D(z_init) if the IC is stored at z_init")
+    ap.add_argument("--oracle-coarse", action="store_true",
+                    help="DIAGNOSTIC: condition on R Psi_f (the fine run's coarse band) instead of the coarse run, train AND test")
     ap.add_argument("--label-from", type=int, default=None,
                     help="train on the projected label R_{N->nf} Psi_N of this higher level N instead of the native nf run (Y64-base experiment)")
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(8)))
@@ -658,8 +667,9 @@ def main():
     t0 = time.time()
     if args.dis:
         train = load_real(args.dis, args.ic, args.nc, args.nf, args.train_seeds,
-                          label_from=args.label_from, box=args.box, offset=args.offset)
-        test = load_real(args.dis, args.ic, args.nc, args.nf, args.test_seeds)   # test truth = native run
+                          label_from=args.label_from, box=args.box, offset=args.offset, oracle_coarse=args.oracle_coarse)
+        test = load_real(args.dis, args.ic, args.nc, args.nf, args.test_seeds,   # test truth = native run
+                         box=args.box, offset=args.offset, oracle_coarse=args.oracle_coarse)
         if args.label_from:
             print(f"training label = R_cube[{args.label_from}->{args.nf}] of the level-{args.label_from} run "
                   f"(offset {args.offset}); test truth stays the native {args.nf}^3 run")
