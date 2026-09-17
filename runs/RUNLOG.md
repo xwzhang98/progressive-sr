@@ -2100,3 +2100,39 @@ sits at the low end of the laptop's two-box range; same qualitative picture (bas
 the residual flow repairs it from above and overshoots into a deficit at the top of the band).
 NB: set8's native 64 is within 1-3% of 128 in-band (set0 was 3-4% low) — box-to-box scatter of the
 "native 64 end-member" is of the same size as its deficit; quote both boxes when this matters.
+
+## 2026-09-16 17:25 — Phase B verdict: the Y64-base does NOT change the residual flow's density (set8)
+
+B3 RF_resflow_psc_y64 (residual flow on the Y64-trained base B1, target = native 64; lambda auto 0.0155,
+3000 steps, loss 9.97e-2). Lagrangian octave band vs native 64: base r=0.777 P/P=0.688; emulator r=0.770
+P/P=1.007 rms 0.369; generative r=0.199 P/P=0.983.
+
+Eulerian density vs the CONVERGED native 128 of set8, k < k_Ny,64 (eval_vs_ref.py):
+| field (set8)               | P/P @kNy32 / 0.75kNy64 / 0.9kNy64 | r@0.9kNy64 | band min/max | 1%/5% frontier |
+|----------------------------|-----------------------------------|------------|--------------|----------------|
+| native 64 (truth)          | 1.000 / 1.012 / 1.015             | 0.974      | 0.990/1.029  | 0.50 / 1.95    |
+| B0 base (native label)     | 1.191 / 1.299 / 1.397             | 0.924      | 1.001/1.447  | 0.26 / 0.44    |
+| B1 base (Y64 label)        | 1.196 / 1.283 / 1.368             | 0.924      | 1.001/1.399  | 0.14 / 0.38    |
+| B2 flow on B0, emulator    | 0.958 / 0.829 / 0.746             | 0.926      | 0.718/1.012  | 0.44 / 1.07    |
+| B3 flow on B1, emulator    | 0.956 / 0.819 / 0.734             | 0.921      | 0.694/1.017  | 0.76 / 1.07    |
+| B2 generative              | 0.966 / 0.834 / 0.741             | 0.876      | 0.707/1.021  | 0.57 / 1.07    |
+| B3 generative              | 0.951 / 0.808 / 0.709             | 0.873      | 0.668/1.014  | 0.50 / 1.01    |
+
+Pre-registered criterion (HANDOFF §2 B): in-band P/P in [0.95, 1.00] AND r_delta@0.9 k_Ny,64 > 0.95.
+B3: FAILS on both (0.73 at the top of the band; r 0.921). B2 (control) fails identically. Verdict:
+* The label swap is invisible at the density level: B1's base excess equals B0's (1.37 vs 1.40 at
+  0.9 k_Ny,64, identical r 0.924) although B1 was trained toward a label that itself over-concentrates by
+  10-19% -> the base's over-concentration is conditional-mean shrinkage (notes: a<1 over-compacts
+  multi-stream patches), not a label property; and the residual flow, whose own target is the native 64
+  run, lands at the same deficit (0.73-0.75) and the same r (0.92) whichever base it sits on.
+* Hence "supervision alone" (a better label for the base) is REFUTED as the route to the reference's
+  density in-band; the HANDOFF's consequence applies: the representation route gets priority.
+* What the flow does and does not fix: it removes the base's +40% excess (from above, as on the laptop)
+  and overshoots into a -25% deficit at 0.9 k_Ny,64, while r_delta stays at the base's 0.92 (native 64:
+  0.974). Both models' 5% frontier is 1.07 h/Mpc = 0.53 k_Ny,64; the native 64 run's is the band end.
+  The missing quantity is phase coherence at k > 0.5 k_Ny,64 (the octave region where the linear octave
+  explains r^2 < 0.15 and the conditional is heavy-tailed, Phase 0 table), not band power.
+* Caveats: one box (set8); Lagrangian r 0.796 vs 0.770 says the Y64 base is also slightly worse in the
+  displacement metric; generative-mode density is within 0.03 of emulator at both models (independent-T
+  sampler, prior-robust as on the laptop).
+Parameter accounting: base+flow 3.11M (1.56M + 1.56M) for B2/B3, 1.56M for B0/B1.

@@ -131,3 +131,16 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
   Y128 = R Psi_256 over-concentrates +30..48% vs +10..19% for Y64 -- the label excess grows with level.
 * NEXT = Phase B (Y64-base retrain) as specified in §2; needs a GPU and the 32-level data (`data/selfsim`
   rsync from the laptop, or convert the raw `dmo-32` BigFile outputs with `hpc/convert_snapshot.py`).
+
+## 8. Cluster session 2026-09-16 — Phase B DONE (RUNLOG 17:15 and 17:25 entries)
+
+* Data: 32^3 sets 1-15 simulated (seeds verified = other levels), `data/psc/` unified layout, converter
+  validated bitwise. Phase B = B0 control base / B1 Y64 base / B2 / B3 residual flows on PSC sets 0-7 -> 8.
+* VERDICT: B3 fails the pre-registered criterion exactly like the control B2 (density vs native 128 in the
+  64 band: 0.96/0.82/0.73 at k_Ny,32 / 0.75 / 0.9 k_Ny,64, r 0.92; B2: 0.96/0.83/0.75, r 0.93). The base's
+  +40% excess is shrinkage, not the label; the flow's -25% deficit and r = 0.92 do not depend on the base.
+  "Supervision alone" refuted -> representation route (C1/C2) has priority, per §2.
+* NEXT (owner's decision): C1 production 64->128 on the 16-set PSC series is already possible (data exists);
+  C2 = weight-shared 32->64 + 64->128 resflow with the level in the style scalar (owner pre-approved
+  two-transition training); the one open diagnostic worth doing first is WHERE the r_delta ceiling (0.92)
+  sits — a per-mask (multi-stream/parity) split of the B2 fields and an r(k) curve, using eval_eulerian.py.
