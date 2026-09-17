@@ -2387,3 +2387,68 @@ Verdict:
    conditional, not information (RUNLOG 00:00).
 Parameter accounting: shared base + shared flow = 3.11M for both levels vs 6.22M for the specialist pairs; reg2 = 3.11M.
 Provenance: runs/M_{reg,resflow,reg2}_psc/results_{32to64,64to128}.json and */{32to64,64to128}/vs_ref.json.
+
+## 2026-09-17 10:50 — Second box (set15) for the shared operator, and the hybrid-detail test: density power = COHERENCE between coarse band and detail
+
+Correction first: the previous entry's/HANDOFF's suggestion "Q_E on the residual flow" is withdrawn — REPORT_7 already
+refuted Q_E on the single-stage flow (P_delta moved DOWN 0.963 -> 0.905; Q_J won). `--cic-weight` was abandoned on the
+owner's reasoning (RUNLOG 2026-09-10: deposit-kernel ceiling, Paper-IV experience); `--jac-weight` works monotonically
+but modestly (0.777 -> 0.845 at 1.5 k_Ny,c). No new training was launched in this entry.
+
+(1) Second box. `runs/multi_resflow_train.py --eval-only` (new flag, inference only on the HENON A100) on test set 15:
+| shared operator, emulator     | 32->64 vs native 128 (P/P @kNy32/0.75/0.9 kNy64, r@0.9) | 64->128 vs native 256            |
+|-------------------------------|----------------------------------------------------------|----------------------------------|
+| native run, set14 / set15     | .986/.987/.998 r .969  /  .977/.976/.971 r .972          | .985/.982/.972 r .979 / .983/.978/.973 r .977 |
+| shared base, set14 / set15    | 1.205/1.368/1.518 r .905 / 1.206/1.342/1.487 r .929      | 1.624/2.129/2.342 r .900 / 1.679/2.196/2.474 r .899 |
+| shared resflow, set14 / set15 | .983/.903/.853 r .907  /  .975/.869/.801 r .935          | .986/.857/.728 r .906 / 1.010/.887/.769 r .912 |
+| shared resflow gen., 14 / 15  | .975/.885/.831 r .852  /  .966/.834/.785 r .860          | .989/.848/.715 r .885 / 1.001/.866/.752 r .888 |
+| shared reg2, set14 / set15    | 1.239/1.486/1.701 r .905 / 1.233/1.445/1.644 r .933      | 1.690/2.322/2.633 r .900 / (set15: Lagr. r .760 P/P .582, Eul vs 128 1.77/2.43/3.08) |
+Lagrangian set15: shared base .844/.722/.293 and .743/.559/.472; shared resflow .815/1.008/.336 and .690/.995/.557.
+-> every C2 statement holds on the second box; box-to-box scatter is +-0.05 in P/P and +-0.03 in r_delta.
+
+(2) Hybrid-detail test (`runs/hybrid_detail_test.py --set 14 --model-run runs/RF_resflow_128_psc --sim .../dmo-128-resample/set14`;
+training-free; fine grid 128, W = 64-cube; "low" = W band, "high" = (1-W) band; density vs the real 128 run,
+P/P and r_delta at k_Ny,64 / 0.75 / 0.9 k_Ny,128; last columns: Lagrangian r and P/P of the detail vs the true detail):
+| field                                  | P_delta/P_true        | r_delta            | detail r_lag | detail P/P |
+|----------------------------------------|-----------------------|--------------------|------|------|
+| T (sanity)                             | 1.000/1.000/1.000     | 1.000/1.000/1.000  | 1.00 | 1.00 |
+| low(T) + NO detail                     | 1.164/1.134/1.063     | 0.986/0.964/0.948  | 0    | 0    |
+| flow emulator, as is                   | 0.984/0.839/0.708     | 0.976/0.938/0.909  | 0.68 | 0.99 |
+| low(T) + high(emulator)                | 0.933/0.752/0.622     | 0.993/0.982/0.972  | 0.68 | 0.99 |
+| low(emulator) + high(T)                | 0.892/0.716/0.595     | 0.985/0.963/0.939  | 1.00 | 1.00 |
+| low(T) + high(generative)              | 0.875/0.660/0.519     | 0.989/0.970/0.955  | 0.24 | 0.96 |
+| base, as is                            | 1.638/2.139/2.365     | 0.972/0.932/0.904  | 0.73 | 0.54 |
+| low(T) + high(base)                    | 1.336/1.461/1.477     | 0.992/0.980/0.971  | 0.73 | 0.54 |
+| low(base) + high(T)                    | 1.030/0.927/0.825     | 0.987/0.967/0.946  | 1.00 | 1.00 |
+| low(T) + PHASE-RANDOMISED high(T)      | 0.621/0.279/0.141     | 0.985/0.957/0.926  | 0.00 | 1.00 |
+| low(T) + envelope-MODULATED random (sigma = 1 / 2 h_c) | 0.473/0.188/0.095 , 0.466/0.167/0.077 | 0.987/0.955/0.913 | 0.00 | 1.00 |
+| true conditional sample oct0..2, as is | 1.00-1.02 / 1.00-1.03 / 1.01-1.02 | 0.985/0.958/0.937 | 0.37 | 0.99 |
+| low(T) + high(oct_j)                   | 0.92/0.81-0.82/0.72-0.73 | 0.993/0.980/0.968 | 0.37 | 0.99 |
+| low(oct_j) + high(T)                   | 0.92/0.81/0.72-0.73   | 0.994/0.980/0.968  | 1.00 | 1.00 |
+(two PR/MOD realisations agree to 0.001.) Findings:
+1. **The detail's job in the density is to CANCEL, not to add**: the true coarse band with no detail at all has an
+   EXCESS (+6..16%) and r_delta 0.948 at 0.9 k_Ny,128 — higher than any model (0.909). The band-limited map is too
+   sharp; the true detail takes that power out coherently (virialised halos of finite size).
+2. **H1 confirmed and far stronger than expected**: a detail with exactly the right per-mode power but random
+   phases destroys the density power (0.14 at 0.9 k_Ny,128). The flow (0.71) is therefore mostly coherent already;
+   its deficit is the incoherent remainder.
+3. **H2 REFUTED**: putting the random detail power where the true detail power sits (envelope modulation) makes it
+   WORSE (0.08-0.10): the detail power lives in the halos, and incoherent displacement there smears exactly the
+   particles that carry the power. The conditional-variance field is not the missing ingredient.
+4. **H3 REFUTED, and the key fact**: the detail of a TRUE conditional sample — a genuine N-body solution with the
+   right power, right non-Gaussianity, right everything — put on the true coarse band gives 0.92/0.81/0.73, i.e. the
+   SAME -27% deficit as our flow, although its own coarse band differs from T's by only 1-9% in power (RUNLOG 00:00:
+   Var/P 0.01-0.09 in the coarse band). And symmetrically low(oct_j)+high(T). The sample as a whole is at 1.01.
+   => the density power is a property of the JOINT field: detail and coarse band must belong to the same solution
+   at the percent level near the coarse Nyquist. A detail that is correct in distribution but not matched to the
+   realised coarse band costs ~27%; the flow sits exactly at that level (0.71-0.73 "as is"), i.e. its detail is
+   about as matched to its own coarse band as an independent conditional draw would be — and mixing the model's
+   bands with the truth's is worse still (0.60-0.62), so the model's bands are partly matched to EACH OTHER.
+5. r_delta in k < k_Ny,128 is carried by the coarse band: every hybrid with low(T) has r_delta 0.97 at 0.9 k_Ny,128
+   whatever the detail (even random: 0.93), and the model "as is" loses its r_delta through its coarse band
+   (low(emulator)+high(T): 0.939; emulator 0.909; base 0.904). The r ceiling of RUNLOG 21:10 is the CORRECTION band.
+What this changes: the target is not "the right conditional for the detail" but "a field whose bands are mutually
+consistent"; metrics to add to every evaluation: P_delta of low(model)+0 and of the band-swapped hybrids. The
+coarse-band correction (r 0.90 at 0.9 k_Ny,c vs the 0.99 reproducibility) is where both the r_delta ceiling and,
+through band mismatch, part of the power deficit originate — consistent with "fix it upstream" (RFT2, §4).
+Provenance: runs/hybrid_set14.{json,log}; runs/M_{resflow,reg2}_psc_set15/.
