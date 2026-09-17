@@ -39,6 +39,21 @@ DATASETS = {   # name -> (dis pattern, ic pattern, grid offset)
 }
 
 
+def cic_term(x_pred, x_true, offset, factor, compress):
+    """MSE between compressed CIC densities (mean 1) of q + x_pred and q + x_true, fields in units of h_f,
+    deposited on a (factor N)^3 periodic mesh with eulerian_metric.cic_deposit (differentiable in positions)."""
+    def rho(f):
+        n = f.shape[-1] * factor
+        pos = em.eulerian_positions(f, offset) * factor
+        return em.cic_deposit(f.new_ones((f.shape[0], 1) + tuple(f.shape[-3:])), pos, n)[:, 0] * factor ** 3
+    a, b = rho(x_pred), rho(x_true)
+    if compress == "log1p":
+        a, b = torch.log1p(a), torch.log1p(b)
+    elif compress == "sqrt":
+        a, b = torch.sqrt(a + 1e-6), torch.sqrt(b + 1e-6)
+    return F.mse_loss(a, b)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--steps", type=int, default=3000)
@@ -57,6 +72,12 @@ def main():
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(8)))
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[8])
     ap.add_argument("--oracle-coarse", action="store_true", help="DIAGNOSTIC: condition on R Psi_f, train and test")
+    ap.add_argument("--cic-weight", type=float, default=0.0,
+                    help="approved NONLINEAR Eulerian loss on the x-prediction (CIC density of q + x1_pred vs truth); a controlled "
+                         "bias for the flow -- read GENERATIVE mode too")
+    ap.add_argument("--cic-compress", type=str, default="log1p", choices=["log1p", "sqrt", "lin"],
+                    help="compression of the density before the MSE: log1p (toy default, void-weighted), sqrt, lin (peak-weighted)")
+    ap.add_argument("--cic-factor", type=int, default=1, help="deposit mesh = factor x fine grid (2 moves the CIC kernel ceiling to 2 k_Ny,f)")
     ap.add_argument("--jac-weight", type=float, default=0.0,
                     help="approved NONLINEAR loss on the x-prediction (oft.jac_loss, asinh J): a controlled bias for the flow "
                          "(notes 5.5/5.7d) -- read its effect in GENERATIVE mode too")
@@ -114,6 +135,12 @@ def main():
             lam = float(loss.detach() / term.detach().clamp_min(1e-30))
             print(f"lambda auto = {lam:.5g} (L_mse={float(loss):.4e}, L_qj={float(term):.4e})")
         loss = loss + lam * term
+        if args.cic_weight > 0:
+            x1c = xt + (1 - t)[:, None, None, None, None] * v          # the velocity's own endpoint prediction
+            lcic = cic_term(x1c, x1, OFF, args.cic_factor, args.cic_compress)
+            if step % max(1, args.steps // 20) == 0 or step == step0 + 1:
+                print(f"        [cic] L_flow={float(loss):.4e} cic_weight*L_cic={float(args.cic_weight * lcic):.4e}", flush=True)
+            loss = loss + args.cic_weight * lcic
         if args.jac_weight > 0:
             x1p = xt + (1 - t)[:, None, None, None, None] * v          # the velocity's own endpoint prediction
             ljac = oft.jac_loss(sc, x1p, x1)

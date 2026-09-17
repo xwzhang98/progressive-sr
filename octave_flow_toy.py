@@ -584,6 +584,9 @@ def main():
     ap.add_argument("--dis", type=str, default=None, help="real data pattern with {N} and {seed}")
     ap.add_argument("--ic", type=str, default=None, help="real IC pattern with {N} and {seed}")
     ap.add_argument("--growth", type=float, default=1.0, help="D(z)/D(z_init) if the IC is stored at z_init")
+    ap.add_argument("--loss-band", type=str, default="all", choices=["all", "low"],
+                    help="DIAGNOSTIC: 'low' puts the MSE on the coarse (correction) band of the error only -- the headroom "
+                         "test for a dedicated correction stage (RUNLOG 2026-09-17); the octave output is then unconstrained")
     ap.add_argument("--oracle-coarse", action="store_true",
                     help="DIAGNOSTIC: condition on R Psi_f (the fine run's coarse band) instead of the coarse run, train AND test")
     ap.add_argument("--label-from", type=int, default=None,
@@ -741,7 +744,7 @@ def main():
             t = torch.zeros(args.batch, device=dev) if args.regression else torch.rand(args.batch, device=dev)
             xt = (1 - t)[:, None, None, None, None] * x0 + t[:, None, None, None, None] * x1
             v = model(net_input(xt, Pc, D), t, s_level[: args.batch])
-            loss = F.mse_loss(v, x1 - x0)
+            loss = F.mse_loss(v, x1 - x0) if args.loss_band == "all" else (sc.band(v - (x1 - x0), "low") ** 2).mean()
             if args.loss_metric != "lag":
                 # admissible metric on the flow-matching error itself (notes 5.1: any positive
                 # form in (x_t, C, t) leaves the minimiser u_t unchanged -- e never sees x1)
