@@ -69,6 +69,8 @@ def main():
     ap.add_argument("--max-seconds", type=float, default=None)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--eval-only", type=str, default=None,
+                    help="checkpoint of THIS mode: skip training, evaluate on --test-seeds (second-box checks)")
     args = ap.parse_args()
     if args.mode != "base":
         assert args.base_ckpt, "--mode resflow/reg2 need --base-ckpt"
@@ -127,50 +129,58 @@ def main():
         torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), ema=ema, step=step, log=log,
                         base=args.base, lams=[lv["lam"] for lv in levels]), state_path)
 
-    nlev = len(levels); total = nlev * args.steps
-    t0 = time.time()
-    for gstep in range(step0 + 1, total + 1):
-        lv = levels[(gstep - 1) % nlev]
-        sc, ba, B = lv["sc"], lv["ba"], lv["batch"]
-        x0, x1, Pc, D = ba.sample(B)
-        s = torch.full((B,), lv["s"], device=dev)
-        if args.mode == "base":
-            src = x0
-        else:
-            src = base_pred(x0, Pc, D, s)
-        if args.mode == "resflow":
-            t = torch.rand(B, device=dev)
-            xt = (1 - t)[:, None, None, None, None] * src + t[:, None, None, None, None] * x1
-        else:
-            t = torch.zeros(B, device=dev); xt = src
-        v = model(oft.net_input(xt, Pc, D), t, s)
-        target = x1 - src
-        loss = F.mse_loss(v, target)
-        if args.mode != "base":
-            e = v - target
-            term = em.jacobian_form(e, Pc.detach(), p=args.jac_p, eps=args.jac_eps, fft_device=sc.fdev)
-            if lv["lam"] is None:
-                lv["lam"] = float(loss.detach() / term.detach().clamp_min(1e-30))
-                print(f"lambda[{lv['Nc']}->{lv['Nf']}] = {lv['lam']:.5g} (L_mse={float(loss):.4e}, L_qj={float(term):.4e})", flush=True)
-            loss = loss + lv["lam"] * term
-        opt.zero_grad(set_to_none=True); loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
-        with torch.no_grad():
-            for k, p_ in model.state_dict().items():
-                ema[k].mul_(0.99).add_(p_.detach(), alpha=0.01)
-        log.append(float(loss.detach()))
-        if gstep % max(1, total // 40) == 0 or gstep == step0 + 1:
-            print(f"gstep {gstep:5d} [{lv['Nc']}->{lv['Nf']}] loss {np.mean(log[-40:]):.4e} "
-                  f"({(time.time()-t0)/(gstep-step0):.2f}s/step)", flush=True)
-        if args.max_seconds is not None and time.time() - t0 > args.max_seconds and gstep < total:
-            save_state(gstep)
-            print(f"time budget reached at global step {gstep}/{total}; state saved", flush=True)
-            return
-    save_state(total)
-    model.load_state_dict(ema); model.eval()
-    torch.save({"state_dict": model.state_dict(), "base": args.base, "args": vars(args), "mode": args.mode,
-                "lams": [lv["lam"] for lv in levels], "s_values": [lv["s"] for lv in levels]},
-               os.path.join(args.out, "model_ema.pt"))
+    if args.eval_only:
+        cke = torch.load(args.eval_only, map_location=dev)
+        assert cke.get("mode", args.mode) == args.mode, "checkpoint mode differs from --mode"
+        model.load_state_dict(cke["state_dict"]); model.eval()
+        for lv, lam in zip(levels, cke.get("lams") or [None] * len(levels)):
+            lv["lam"] = lam
+        print(f"eval-only: {args.eval_only} on test set {args.test_seeds[0]}", flush=True)
+    else:
+        nlev = len(levels); total = nlev * args.steps
+        t0 = time.time()
+        for gstep in range(step0 + 1, total + 1):
+            lv = levels[(gstep - 1) % nlev]
+            sc, ba, B = lv["sc"], lv["ba"], lv["batch"]
+            x0, x1, Pc, D = ba.sample(B)
+            s = torch.full((B,), lv["s"], device=dev)
+            if args.mode == "base":
+                src = x0
+            else:
+                src = base_pred(x0, Pc, D, s)
+            if args.mode == "resflow":
+                t = torch.rand(B, device=dev)
+                xt = (1 - t)[:, None, None, None, None] * src + t[:, None, None, None, None] * x1
+            else:
+                t = torch.zeros(B, device=dev); xt = src
+            v = model(oft.net_input(xt, Pc, D), t, s)
+            target = x1 - src
+            loss = F.mse_loss(v, target)
+            if args.mode != "base":
+                e = v - target
+                term = em.jacobian_form(e, Pc.detach(), p=args.jac_p, eps=args.jac_eps, fft_device=sc.fdev)
+                if lv["lam"] is None:
+                    lv["lam"] = float(loss.detach() / term.detach().clamp_min(1e-30))
+                    print(f"lambda[{lv['Nc']}->{lv['Nf']}] = {lv['lam']:.5g} (L_mse={float(loss):.4e}, L_qj={float(term):.4e})", flush=True)
+                loss = loss + lv["lam"] * term
+            opt.zero_grad(set_to_none=True); loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
+            with torch.no_grad():
+                for k, p_ in model.state_dict().items():
+                    ema[k].mul_(0.99).add_(p_.detach(), alpha=0.01)
+            log.append(float(loss.detach()))
+            if gstep % max(1, total // 40) == 0 or gstep == step0 + 1:
+                print(f"gstep {gstep:5d} [{lv['Nc']}->{lv['Nf']}] loss {np.mean(log[-40:]):.4e} "
+                      f"({(time.time()-t0)/(gstep-step0):.2f}s/step)", flush=True)
+            if args.max_seconds is not None and time.time() - t0 > args.max_seconds and gstep < total:
+                save_state(gstep)
+                print(f"time budget reached at global step {gstep}/{total}; state saved", flush=True)
+                return
+        save_state(total)
+        model.load_state_dict(ema); model.eval()
+        torch.save({"state_dict": model.state_dict(), "base": args.base, "args": vars(args), "mode": args.mode,
+                    "lams": [lv["lam"] for lv in levels], "s_values": [lv["s"] for lv in levels]},
+                   os.path.join(args.out, "model_ema.pt"))
 
     # ---- evaluation, per level --------------------------------------------------------------
     for lv in levels:

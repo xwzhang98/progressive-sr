@@ -29,3 +29,5 @@ notes/*.synctex.gz
 data/
 .claude/
 runs/.claims/
+runs/**/*.err
+runs/*.out

@@ -164,6 +164,9 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
   P_delta/P_true = 1.01 +- 0.02 at r_delta 0.94 — the flow's -27..-30% deficit is its conditional being wrong, not
   the price of r < 1. The emulator's r ceiling (0.91) is a model limit (physics floor 0.998 in density).
 * GPUs: HENON hold job 1216965 (kept), TWIG hold job 1234452 (released after C2c). One training per GPU.
-* NEXT (owner's call): the flow's conditional is the target — candidates: Q_E form on the residual flow
-  (approved), training/validating against the true conditional samples (more sets are cheap: 30 min per 128^3 run),
-  and the shared operator for the 64->512 chain. Per-box scatter: quote set14 AND a second box before any claim.
+* NEXT (owner's call): the flow's conditional is the target. CORRECTION 2026-09-17: the Q_E form is NOT a
+  candidate — REPORT_7 already refuted it on the single-stage flow (qe moved P_delta DOWN, 0.963 -> 0.905; qj won);
+  the session's earlier suggestion overlooked that. Candidates that stand: training/validating against the true
+  conditional samples (30 min per 128^3 run), the shared operator for the 64->512 chain, and first the
+  training-free localisation `runs/hybrid_detail_test.py` (what in the octave detail carries the density).
+  Per-box scatter: quote set14 AND set15 before any claim.
