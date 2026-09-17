@@ -2205,3 +2205,32 @@ k_Ny,128 here, i.e. essentially no phase gain), the ceiling is spatially uniform
 starts at the coarse Nyquist (r >= 0.99 below 0.4 k_Ny,128). The base's density excess is now +130% at 0.9
 k_Ny,128 (shrinkage in a 37%-multi-stream volume) and the flow's deficit -31%; J<0 fraction truth/base/emu
 0.418/0.412/0.419 (restored by the flow again). Provenance: runs/RF_resflow_128_psc/diag_rceiling.{json,png}.
+
+## 2026-09-16 23:10 — Owner's course notes §1 + §4 launched (martingale structure in resolution)
+
+Owner reviewed the course<->research mapping (Wiener process / filtration / martingale / L2 projection)
+and chose two items. Session's corrections recorded there: (i) two ceilings must be distinguished —
+Var(fine | F_n) with F_n = sigma(modes k < k_n) bounds the GENERATIVE mode (coarse-only information);
+the EMULATOR has the true octave, so its ceiling (r_lag 0.83, r_delta 0.92; identical for base and flow,
+spatially uniform, RUNLOG 21:10) is the learnability of the chaotic IC -> z=0 map given the coarse run's
+O(1) Nyquist error, not an information limit; (ii) cube vs sphere windows both give exactly independent
+Gaussian increments (disjoint k-sets), the correlated-step issue belongs to real-space tophat filters;
+(iii) the excursion-set walk is defined on the linear field, so it does not transfer to the z=0 SR field.
+
+§1 — TRUE conditional samples from the simulator (`runs/resample_octave_ic.py --set 14 --nsamples 8`):
+real 128 IC of set14, coarse band (64-cube) kept, octave (128-cube minus 64-cube, Nyquist planes zero)
+replaced by unit-modulus random phases with the shell-mean amplitude A(k) (the real IC's per-mode
+|delta|/A spreads by 0.27 — GenIC's UnitaryAmplitude is not exact on the 2LPT displacement; the shell
+POWER is matched). Zel'dovich at z=99, q = (i+1/2) h, IDs 1-based C, header copied from the real IC;
+v = 0.52776104 Psi measured on the set14 64 IC (residual 8e-8: the real ICs are pure Zel'dovich in
+velocity). Controls: ctrl_exact (real Psi through the writer), ctrl_zel (real modes re-Zel'dovich'd,
+|dPsi| = 4.2% rms: 2LPT + Nyquist planes + folded content). Coarse band identical across samples to 2e-7.
+MP-Gadget: `sim_scripts/.../dmo-128-resample/{ctrl_exact,ctrl_zel,oct0..7}` (dmo-128/set14 params,
+OutputList = 1 only), RM job 1233922, 14 ranks. Outputs -> `sim_output/.../dmo-128-resample/set14/`.
+Analysis to follow: per-shell Var(fine | F_n) and predictable fraction, the empirical conditional mean vs
+the learned base F_reg_128_psc, and P_delta/P_true, r_delta of each TRUE conditional sample vs the real run
+(the reference for the flow's generative deficit, RUNLOG 21:10 finding 4).
+
+§4 — chain martingale test (`runs/chain_martingale.py --set 14`, CPU, running): 32->64->128 with the
+production-split resflow pairs, correction-band regression slopes beta/gamma/kappa/gamma_D per shell and
+the orthogonality check E|e_chain|^2 vs E|e1|^2 + E|eps2|^2; fields dumped for eval_vs_ref vs native 256.
