@@ -57,6 +57,9 @@ def main():
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(8)))
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[8])
     ap.add_argument("--oracle-coarse", action="store_true", help="DIAGNOSTIC: condition on R Psi_f, train and test")
+    ap.add_argument("--jac-weight", type=float, default=0.0,
+                    help="approved NONLINEAR loss on the x-prediction (oft.jac_loss, asinh J): a controlled bias for the flow "
+                         "(notes 5.5/5.7d) -- read its effect in GENERATIVE mode too")
     args = ap.parse_args()
     DIS, IC, OFF = DATASETS[args.data]
     os.makedirs(args.out, exist_ok=True)
@@ -111,6 +114,12 @@ def main():
             lam = float(loss.detach() / term.detach().clamp_min(1e-30))
             print(f"lambda auto = {lam:.5g} (L_mse={float(loss):.4e}, L_qj={float(term):.4e})")
         loss = loss + lam * term
+        if args.jac_weight > 0:
+            x1p = xt + (1 - t)[:, None, None, None, None] * v          # the velocity's own endpoint prediction
+            ljac = oft.jac_loss(sc, x1p, x1)
+            if step % max(1, args.steps // 20) == 0 or step == step0 + 1:
+                print(f"        [jac] L_flow={float(loss):.4e} jac_weight*L_jac={float(args.jac_weight * ljac):.4e}", flush=True)
+            loss = loss + args.jac_weight * ljac
         opt.zero_grad(set_to_none=True); loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
         with torch.no_grad():
