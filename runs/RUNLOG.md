@@ -2136,3 +2136,45 @@ B3: FAILS on both (0.73 at the top of the band; r 0.921). B2 (control) fails ide
   displacement metric; generative-mode density is within 0.03 of emulator at both models (independent-T
   sampler, prior-robust as on the laptop).
 Parameter accounting: base+flow 3.11M (1.56M + 1.56M) for B2/B3, 1.56M for B0/B1.
+
+## 2026-09-16 21:10 — Diagnostic (owner option 3): where the r_delta ceiling sits — at the BASE, uniformly in space
+
+`python runs/diag_rceiling.py runs/RF_resflow_psc --set 8` (CPU; verified estimator; subset deposits by the
+coarse-run multi-stream mask upsampled, eval_eulerian T4 convention; multi-stream fraction 0.300).
+r_delta(k) vs native 128 at k/k_Ny,64 = 0.2 ... 1.0 (step 0.1) and P/P(k):
+| field      | r: 0.2  0.3  0.4  0.5  0.6  0.7  0.8  0.9  1.0                | P/P: 0.2 ... 1.0 |
+|------------|----------------------------------------------------------------|------------------|
+| native 64  | 1.000 .999 .998 .996 .992 .988 .980 .974 .967                  | 0.99 .99 1.00 1.00 1.01 1.02 1.01 1.01 1.03 |
+| B0 base    | 0.999 .995 .991 .983 .974 .960 .942 .924 .908                  | 1.03 1.11 1.17 1.19 1.24 1.28 1.35 1.40 1.45 |
+| B2 emulator| 0.999 .995 .991 .984 .975 .961 .943 .926 .908                  | 1.00 1.01 1.01 0.96 0.92 0.87 0.80 0.75 0.72 |
+| B2 generat.| 0.998 .988 .976 .961 .945 .925 .897 .876 .854                  | 1.00 1.02 1.02 0.97 0.93 0.87 0.80 0.74 0.71 |
+Per-mask r at 0.5/0.75/0.9 k_Ny,64: base MS .983/.950/.922 SS .980/.942/.913; emulator MS .983/.949/.919
+SS .981/.941/.910; native 64: MS .995/.984/.974 SS .994/.977/.961. Lagrangian rms err (h_f) all/MS/SS:
+base 0.308/0.372/0.276, emulator 0.354/0.430/0.315. J quantiles (1/5/25/50/75/95/99%): truth
+[-2.92 -1.28 -0.16 0.17 1.37 6.14 11.05], base [-1.68 -0.68 -0.06 0.07 1.18 5.79 10.45] (compressed),
+emulator [-3.05 -1.32 -0.17 0.17 1.38 6.13 10.98] (restored); J<0 fraction truth/base/emu 0.375/0.367/0.374;
+mass at delta>100: truth 0.056, base 0.071, emulator 0.047, generative 0.048.
+Findings:
+1. **The residual flow adds NO phase information**: its r_delta(k) equals the base's at every k to the third
+   digit (0.926 vs 0.924 at 0.9 k_Ny,64, 0.908 vs 0.908 at k_Ny). It only rescales power (1.45 -> 0.72 at
+   k_Ny,64) and restores the J distribution and the multi-stream fraction. The r ceiling is the base's, i.e.
+   the conditional mean's, i.e. the information limit of the inputs (P Psi_c, D_ij, true IC octave).
+2. **The ceiling is spatially uniform**: inside and outside the multi-stream mask the base/emulator r differ
+   by < 0.01 (MS 0.919 vs SS 0.910 at 0.9 k_Ny,64); the native 64 run also loses coherence equally in both
+   (0.974/0.961). Not a halo/multi-stream phenomenon.
+3. **It sits in the octave band**: r >= 0.99 for k < 0.4 k_Ny,64 and starts falling exactly at k_Ny,32 = 0.5
+   k_Ny,64, where the model has to synthesise the detail (Phase 0: linear octave r^2 <= 0.29, coarse run's
+   own error 0.57 at 0.94 k_Ny,c). The emulator has the TRUE IC octave and still reaches only r_lag 0.83,
+   so the missing ~30% of detail variance is not the IC octave: it is the part of the detail that the
+   coarse run's O(1)-wrong Nyquist band does not determine (the "chain error goes upstream" finding).
+4. **The density deficit is the price of incoherent added power**: Lagrangian P/P = 1.00 at r_lag = 0.80
+   means 36% of the octave-band variance is noise w.r.t. the truth; per the notes it damps P_delta by
+   exp(-k^2 sigma_n^2), giving the 0.72 at k_Ny,64 (base: no noise, but shrinkage -> +45% and 0.071 mass at
+   delta > 100). A sampler from the TRUE conditional would have P_delta/P_true = 1 at the same r; ours does not
+   -> the flow's conditional is too Gaussian in the density sense (adds displacement power that does not
+   form the missing structure), even though its J quantiles are right.
+Implications for C1/C2 (the representation route): a bigger/better base can only move the ceiling through
+the input information (receptive field over the coarse run's error band); the flow's job is the conditional's
+density coherence, which the qj form alone does not enforce — the Eulerian quadratic form Q_E (approved) on
+the residual flow is the natural next knob, with the generative-mode density as the readout.
+Provenance: runs/RF_resflow_psc/diag_rceiling.{json,png}; runs/diag_rceiling.py.

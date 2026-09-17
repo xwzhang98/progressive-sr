@@ -37,6 +37,13 @@ for stage in "${@:-C1a C1b S32a S32b EVAL}"; do
     S32b) run runs/RF_resflow_psc14   runs/resflow_train.py --data psc --nc 32 --nf 64 --batch 2 --train-seeds $TRAIN --test-seeds $TEST --steps $STEPS --device cuda --base-ckpt runs/R_reg_psc14/model_ema.pt ;;
     EVAL) $PY runs/eval_vs_ref.py runs/RF_resflow_128_psc --nc 128 --set $TEST | tee -a $LOG
           $PY runs/eval_vs_ref.py runs/RF_resflow_psc14 --nc 64 --set $TEST | tee -a $LOG ;;
+    # ---- C2: weight-shared two-stage operator (32->64 + 64->128), runs/multi_resflow_train.py ----
+    C2a)  run runs/M_reg_psc     runs/multi_resflow_train.py --mode base    --data psc --train-seeds $TRAIN --test-seeds $TEST --steps $STEPS --device cuda ;;
+    C2b)  run runs/M_resflow_psc runs/multi_resflow_train.py --mode resflow --data psc --train-seeds $TRAIN --test-seeds $TEST --steps $STEPS --device cuda --base-ckpt runs/M_reg_psc/model_ema.pt ;;
+    C2c)  run runs/M_reg2_psc    runs/multi_resflow_train.py --mode reg2    --data psc --train-seeds $TRAIN --test-seeds $TEST --steps $STEPS --device cuda --base-ckpt runs/M_reg_psc/model_ema.pt ;;
+    EVAL2) for m in M_resflow_psc M_reg2_psc; do for lv in 32to64:64 64to128:128; do tag=${lv%%:*}; nc=${lv##*:}
+             mkdir -p runs/$m/$tag; for f in truth base emulator generative; do ln -sf ../field_${f}_${tag}.npy runs/$m/$tag/field_${f}.npy; done
+             $PY runs/eval_vs_ref.py runs/$m/$tag --nc $nc --set $TEST | tee -a $LOG; done; done ;;
     *) echo "unknown stage $stage"; exit 1 ;;
   esac
 done
