@@ -2274,3 +2274,70 @@ Reading:
 4. Phase loss compounds through the octave: r_delta at 0.9 kNy,128 falls from 0.904 (direct) to 0.716 (chained) —
    the new octave is synthesised from a coarse field whose own top band has r 0.66.
 Provenance: runs/chain_psc14/chain_martingale.json, runs/chain_psc14/{direct,chained}/vs_ref.json, runs/chain_psc14.log.
+
+## 2026-09-17 00:00 — §1 result: the simulator's own conditional samples — Var(fine | F_n), the two ceilings, and the density theorem
+
+10 MP-Gadget 128^3 runs of set14 (RM array 1235607/1236177/1236641, ~30 min each on 14 ranks; MaxMemSizePerNode had
+to be pinned to 80000 MB because the default 0.6 x node memory exceeds the job cgroup on 257 GB nodes): ctrl_exact,
+ctrl_zel, oct0..7 (coarse band of the real IC kept, octave resampled; runs/resample_octave_ic.py). Converted with the
+validated convention; `runs/condvar_analysis.py --set 14 --sim .../dmo-128-resample/set14 --model-run runs/RF_resflow_128_psc`
+-> runs/condvar_set14.{json,png,log}. Reference = the real 128 run of set14; model = C1 (F_reg_128_psc base +
+RF_resflow_128_psc), emulator mode = true octave, generative = sampled octave.
+
+Lagrangian, 128 grid, per shell (k/k_Ny,64; 1..2 = the octave):
+| quantity                                   | 0.50  | 0.90  | 1.10  | 1.25  | 1.50  | 1.75  | 1.95  |
+|--------------------------------------------|-------|-------|-------|-------|-------|-------|-------|
+| Var(fine|F_n)/P_real  (unpredictable frac.) | 0.010 | 0.094 | 0.304 | 0.455 | 0.604 | 0.685 | 0.711 |
+| r(conditional mean, real)  [8 samples]      | 0.994 | 0.944 | 0.811 | 0.697 | 0.564 | 0.475 | 0.419 |
+| r(true sample, real)  mean                  | 0.990 | 0.904 | 0.695 | 0.539 | 0.387 | 0.297 | 0.249 |
+| r(sample_i, sample_j)  mean                 | 0.990 | 0.906 | 0.696 | 0.542 | 0.394 | 0.304 | 0.261 |
+| P_sample / P_real  mean                     | 1.000 | 0.998 | 1.000 | 0.994 | 0.996 | 0.983 | 0.961 |
+| r(learned base, real)  [emulator: true octave] | 0.985 | 0.901 | 0.831 | 0.792 | 0.727 | 0.638 | 0.591 |
+| r(learned base, conditional mean)           | 0.987 | 0.896 | 0.694 | 0.549 | 0.400 | 0.282 | 0.213 |
+| r(flow emulator, real)                      | 0.981 | 0.876 | 0.793 | 0.748 | 0.671 | 0.572 | 0.519 |
+| r(flow generative, real)                    | 0.971 | 0.769 | 0.537 | 0.376 | 0.239 | 0.146 | 0.105 |
+| r(ctrl_exact, real)  [same IC rerun]        | 0.999 | 0.994 | 0.987 | 0.978 | 0.956 | 0.932 | 0.915 |
+| r(ctrl_zel, real)                           | 0.999 | 0.989 | 0.975 | 0.958 | 0.920 | 0.873 | 0.841 |
+Real-space: ctrl_exact vs real rel-rms 3.5% (corr 0.9994), ctrl_zel 4.7%, resampled octave 11% (corr 0.994).
+
+Eulerian density vs the real 128 run, k < k_Ny,128, P/P and r_delta at (k_Ny,64 / 0.75 / 0.9 k_Ny,128):
+| field                          | P_delta/P_true            | r_delta             |
+|--------------------------------|---------------------------|---------------------|
+| TRUE conditional samples (8)   | 1.006+-0.009 / 1.014+-0.014 / 1.008+-0.017 | 0.985 / 0.959 / 0.938 (+-0.001..0.004) |
+| ctrl_exact                     | 1.000 / 1.000 / 1.001     | 1.000 / 0.999 / 0.998 |
+| ctrl_zel                       | 0.994 / 1.001 / 1.003     | 0.999 / 0.997 / 0.994 |
+| C1 base (regression)           | 1.638 / 2.139 / 2.365     | 0.972 / 0.932 / 0.904 |
+| C1 residual flow, emulator     | 0.984 / 0.839 / 0.708     | 0.976 / 0.938 / 0.909 |
+| C1 residual flow, generative   | 0.987 / 0.836 / 0.698     | 0.969 / 0.922 / 0.887 |
+
+Findings:
+1. **Var(fine | F_n) measured**: the coarse band is 99% predictable at 0.5 k_Ny,64 and 91% at 0.9 k_Ny,64 (the
+   coarse run's own Nyquist error is mostly a deterministic function of the coarse modes); the octave is 70%
+   predictable at its bottom and 29% at its top. The conditional mean given the coarse band alone reaches
+   r = 0.81 -> 0.42 across the octave, a true conditional sample r = 0.70 -> 0.25, and the flow's generative
+   samples r = 0.54 -> 0.10: the flow's generative mode uses LESS of the coarse information than the simulator's
+   own conditional (it is under-informed, not over-dispersed: its P/P is 0.96 in the Lagrangian octave band).
+2. **Two ceilings, now both measured**. Generative (F_n): the conditional-mean r above. Emulator (F_{n+1}, true
+   octave): the learned base already beats the F_n conditional mean at the top of the octave (0.59 vs 0.42 —
+   that is the IC octave's information), but the simulator's own reproducibility ceiling from the SAME IC is
+   r = 0.987 -> 0.915 across the octave (ctrl_exact: rank count / sync points / chaos), so the emulator's 0.79 -> 0.52
+   is a MODEL limit with 0.2-0.4 of headroom in r, not a physics floor; in real space the unlearnable floor is
+   3.5% rms (multi-stream chaos), the emulator sits at 57%.
+3. **The density theorem holds in the simulator**: every true conditional sample has P_delta/P_true = 1.01 +- 0.02 at
+   all three probes while its r_delta is 0.94 at 0.9 k_Ny,128 — LOWER coherence than our emulator (0.909 is only
+   0.03 below) yet no deficit at all. The flow's -30% at the same k is therefore not the price of r < 1; it is the
+   flow's conditional being wrong in the density sense (its added octave power does not build the missing
+   structure; RUNLOG 21:10 finding 4 confirmed against ground truth). The base's +137% is shrinkage, as before.
+4. **Density is the robust observable, Lagrangian displacement inside halos is not**: the same-IC rerun differs by
+   3.5% rms in Psi (r 0.915 at k_Ny,128) but by 0.1% in P_delta with r_delta 0.998. Per-realization Lagrangian
+   metrics near the fine Nyquist compare against an object that is itself only reproducible to r ~ 0.92.
+5. ctrl_zel: the Zel'dovich / Nyquist-plane / folded-content difference (4.2% in the IC) costs r 0.84 at the top of
+   the octave and 4.7% rms at z=0 but nothing in density (0.994-1.003): the resampled runs are on the same footing
+   as the real one for every density statement, and slightly disadvantaged (P 0.96 at the octave top) for
+   Lagrangian ones.
+What this changes: (a) the target for the generative flow is now numerical — r_delta 0.94 with P_delta/P = 1.00
+at 0.9 k_Ny,128 exists and is reachable in principle; (b) the emulator's ceiling (0.91) is not the physics floor
+(0.998 in density); (c) both the base's excess and the flow's deficit are properties of the learned conditional,
+and the true conditional's samples are the natural training/validation targets for whatever fixes it
+(e.g. the Q_E form on the residual flow, or training on multiple true conditional samples per coarse box).
+Provenance: runs/condvar_set14.{json,png}, runs/condvar_set14.log; ICs and sims under sim_output/.../dmo-128-resample.
