@@ -319,7 +319,7 @@ def make_synthetic(Nc, Nf, L, offset, seeds, rms_delta, n_index, dealias):
     return data
 
 
-def load_real(dis_pat, ic_pat, Nc, Nf, seeds, label_from=None, box=None, offset=0.0, oracle_coarse=False):
+def load_real(dis_pat, ic_pat, Nc, Nf, seeds, label_from=None, box=None, offset=0.0, oracle_coarse=False, vel_pat=None):
     """label_from=N (> Nf): the fine TARGET becomes the Fourier restriction R_{N->Nf} of the level-N run
     (cube window, Nyquist planes zeroed, the data's grid offset) -- the Y64-base experiment (HANDOFF
     2026-09-16, plan B). The native fine run is kept as dis_f_native for reporting; dis_c and ic_f are
@@ -331,6 +331,11 @@ def load_real(dis_pat, ic_pat, Nc, Nf, seeds, label_from=None, box=None, offset=
         icf = p0.load(ic_pat.replace("{seed}", str(s)), Nf)
         assert dc is not None and df is not None and icf is not None, f"missing files for seed {s}"
         item = dict(dis_c=dc, dis_f=df, ic_f=icf)
+        if vel_pat:
+            # coarse-run peculiar velocity (owner approved 2026-09-17: "adding velocities" for the INPUT side only)
+            vc = p0.load(vel_pat.replace("{seed}", str(s)), Nc)
+            assert vc is not None, f"missing coarse velocity for seed {s} (--vel)"
+            item["vel_c"] = vc
         if oracle_coarse:
             # DIAGNOSTIC upper bound (RUNLOG 2026-09-17, hybrid-detail test): condition on the fine run's own
             # coarse band R_{Nf->Nc} Psi_f instead of the coarse run -- not deployable, the correction is zero.
@@ -353,10 +358,12 @@ class Batcher:
     """Builds (x0, x1, cond) on the device from raw numpy fields, with augmentation."""
 
     def __init__(self, sc, data, rng, augment_on=True, growth=1.0, coupling="physical", source_filter="none",
-                 octave_transverse=False, eulerian_inputs=False):
+                 octave_transverse=False, eulerian_inputs=False, velocity_inputs=False, vel_scale=1.0):
         self.sc, self.data, self.rng, self.aug, self.growth = sc, data, rng, augment_on, growth
         self.octave_transverse = octave_transverse
         self.eulerian_inputs = eulerian_inputs
+        self.velocity_inputs = velocity_inputs     # 9 extra channels: d_i (v_c / aHf)_j - D_ij (zero in linear theory)
+        self.vel_scale = vel_scale                 # a H f in velocity units per box length unit
         self.coupling = coupling   # physical: x0 uses the true IC octave of x1; independent: a fresh sample
         self.source_filter = source_filter
 
@@ -382,6 +389,12 @@ class Batcher:
         x0 = (Pc_src + lin) / sc.hf
         x1 = df / sc.hf
         D = sc.gradients(Pc)                                       # dimensionless, from the unfiltered coarse run
+        if self.velocity_inputs:
+            # velocity in displacement units, Psi_v = v_c / (a H f): translation- and Galilei-invariant through its
+            # gradient; the DIFFERENCE to D_ij vanishes in linear theory and marks ongoing collapse / shell crossing.
+            vc = torch.from_numpy(np.stack([it["vel_c"] for it in items])) / self.vel_scale
+            Dv = sc.gradients(sc.prolong(vc))
+            D = torch.cat([D, Dv - D], dim=1)
         if self.eulerian_inputs:
             # log(1 + delta_c) at the coarse Eulerian position of q (notes Sec. 5.4): a scalar
             # channel appended to the conditioning, computed AFTER augmentation so the
@@ -395,8 +408,12 @@ class Batcher:
         for _ in range(B):
             it = self.data[self.rng.integers(len(self.data))]
             if self.aug:
-                dc, df, icf = augment([it["dis_c"], it["dis_f"], it["ic_f"]], self.rng, self.sc.offset)
-                it = dict(dis_c=dc, dis_f=df, ic_f=icf)
+                flds = [it["dis_c"], it["dis_f"], it["ic_f"]] + ([it["vel_c"]] if "vel_c" in it else [])
+                out = augment(flds, self.rng, self.sc.offset)
+                new = dict(dis_c=out[0], dis_f=out[1], ic_f=out[2])
+                if "vel_c" in it:
+                    new["vel_c"] = out[3]
+                it = new
             items.append(it)
         return self.make(items, eta="true" if self.coupling == "physical" else "sample")
 
@@ -584,6 +601,11 @@ def main():
     ap.add_argument("--dis", type=str, default=None, help="real data pattern with {N} and {seed}")
     ap.add_argument("--ic", type=str, default=None, help="real IC pattern with {N} and {seed}")
     ap.add_argument("--growth", type=float, default=1.0, help="D(z)/D(z_init) if the IC is stored at z_init")
+    ap.add_argument("--vel", type=str, default=None, help="coarse-run velocity pattern with {N} and {seed} (for --velocity-inputs)")
+    ap.add_argument("--velocity-inputs", action="store_true",
+                    help="condition also on the coarse run's velocity: 9 channels d_i (v_c/aHf)_j - D_ij (owner approved 2026-09-17)")
+    ap.add_argument("--vel-scale", type=float, default=0.0497884,
+                    help="a H f in velocity units per box length unit (default: z=0, Omega_m 0.2814, km/s per kpc/h)")
     ap.add_argument("--loss-band", type=str, default="all", choices=["all", "low"],
                     help="DIAGNOSTIC: 'low' puts the MSE on the coarse (correction) band of the error only -- the headroom "
                          "test for a dedicated correction stage (RUNLOG 2026-09-17); the octave output is then unconstrained")
@@ -660,7 +682,9 @@ def main():
         _ck = torch.load(args.eval_only, map_location="cpu")
         if isinstance(_ck, dict) and isinstance(_ck.get("args"), dict):
             args.eulerian_inputs = _ck["args"].get("eulerian_inputs", args.eulerian_inputs)
+            args.velocity_inputs = _ck["args"].get("velocity_inputs", args.velocity_inputs)
         del _ck
+    assert not args.velocity_inputs or args.vel, "--velocity-inputs needs --vel"
     os.makedirs(args.out, exist_ok=True)
     torch.manual_seed(args.seed); rng = np.random.default_rng(args.seed)
     dev = torch.device(args.device)
@@ -670,9 +694,11 @@ def main():
     t0 = time.time()
     if args.dis:
         train = load_real(args.dis, args.ic, args.nc, args.nf, args.train_seeds,
-                          label_from=args.label_from, box=args.box, offset=args.offset, oracle_coarse=args.oracle_coarse)
+                          label_from=args.label_from, box=args.box, offset=args.offset, oracle_coarse=args.oracle_coarse,
+                          vel_pat=args.vel if args.velocity_inputs else None)
         test = load_real(args.dis, args.ic, args.nc, args.nf, args.test_seeds,   # test truth = native run
-                         box=args.box, offset=args.offset, oracle_coarse=args.oracle_coarse)
+                         box=args.box, offset=args.offset, oracle_coarse=args.oracle_coarse,
+                         vel_pat=args.vel if args.velocity_inputs else None)
         if args.label_from:
             print(f"training label = R_cube[{args.label_from}->{args.nf}] of the level-{args.label_from} run "
                   f"(offset {args.offset}); test truth stays the native {args.nf}^3 run")
@@ -687,7 +713,7 @@ def main():
     if args.source_filter == "wiener":
         sc.fit_source_filters(train, growth=args.growth)
     batcher = Batcher(sc, train, rng, augment_on=not args.no_augment, growth=args.growth, coupling=args.coupling, octave_transverse=(args.octave_sampler == "full"),
-                      eulerian_inputs=args.eulerian_inputs,
+                      eulerian_inputs=args.eulerian_inputs, velocity_inputs=args.velocity_inputs, vel_scale=args.vel_scale,
                       source_filter=args.source_filter)
     print(f"training coupling: {args.coupling}" + ("  (regression baseline, t=0 only)" if args.regression else ""))
     s_level = torch.zeros(args.batch, device=dev)  # scale/style scalar: constant for a single transition
@@ -707,8 +733,9 @@ def main():
             args.base = int(ckpt.get("base", args.base))
             if isinstance(ckpt.get("args"), dict):
                 args.eulerian_inputs = ckpt["args"].get("eulerian_inputs", args.eulerian_inputs)
+                args.velocity_inputs = ckpt["args"].get("velocity_inputs", args.velocity_inputs)
             ckpt = ckpt["state_dict"]
-    model = UNet3D(cin=12 + (1 if args.eulerian_inputs else 0), cout=3, base=args.base).to(dev)
+    model = UNet3D(cin=12 + (1 if args.eulerian_inputs else 0) + (9 if args.velocity_inputs else 0), cout=3, base=args.base).to(dev)
     nparam = sum(p.numel() for p in model.parameters())
     print(f"model params: {nparam/1e6:.2f}M (base={args.base})")
     log = []

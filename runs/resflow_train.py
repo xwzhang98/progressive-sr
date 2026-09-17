@@ -37,6 +37,8 @@ DATASETS = {   # name -> (dis pattern, ic pattern, grid offset)
     "selfsim": ("data/selfsim/s{seed}/dis_{N}.npy", "data/selfsim/s{seed}/ic_dis_{N}.npy", 0.0),
     "psc": ("data/psc/dmo-{N}/set{seed}/PART_009/disp.npy", "data/psc/dmo-{N}/set{seed}/IC/disp.npy", 0.5),
 }
+VEL = {"psc": "data/psc/dmo-{N}/set{seed}/PART_009/vel.npy"}
+VEL_SCALE = 0.0497884   # a H f at z=0 (Omega_m 0.2814), km/s per kpc/h
 
 
 def cic_term(x_pred, x_true, offset, factor, compress):
@@ -72,6 +74,7 @@ def main():
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(8)))
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[8])
     ap.add_argument("--oracle-coarse", action="store_true", help="DIAGNOSTIC: condition on R Psi_f, train and test")
+    ap.add_argument("--velocity-inputs", action="store_true", help="base AND flow condition also on the coarse velocity (9 channels)")
     ap.add_argument("--cic-weight", type=float, default=0.0,
                     help="approved NONLINEAR Eulerian loss on the x-prediction (CIC density of q + x1_pred vs truth); a controlled "
                          "bias for the flow -- read GENERATIVE mode too")
@@ -88,15 +91,19 @@ def main():
     dev = torch.device(args.device)
 
     sc = oft.Scaffold(args.nc, args.nf, L, OFF, 1.0, dev, window="cube")
-    tr = oft.load_real(DIS, IC, args.nc, args.nf, args.train_seeds, box=L, offset=OFF, oracle_coarse=args.oracle_coarse)
+    vp = VEL[args.data] if args.velocity_inputs else None
+    tr = oft.load_real(DIS, IC, args.nc, args.nf, args.train_seeds, box=L, offset=OFF, oracle_coarse=args.oracle_coarse, vel_pat=vp)
     te = oft.load_real(DIS, IC, args.nc, args.nf, args.test_seeds[:1],   # residual target = NATIVE fine run
-                       box=L, offset=OFF, oracle_coarse=args.oracle_coarse)
+                       box=L, offset=OFF, oracle_coarse=args.oracle_coarse, vel_pat=vp)
     sc.fit_linear_power([it["ic_f"] * GR for it in tr])
     rng = np.random.default_rng(args.seed)
-    ba = oft.Batcher(sc, tr, rng, augment_on=True, growth=GR, octave_transverse=True)
+    ba = oft.Batcher(sc, tr, rng, augment_on=True, growth=GR, octave_transverse=True,
+                     velocity_inputs=args.velocity_inputs, vel_scale=VEL_SCALE)
+    CIN = 12 + (9 if args.velocity_inputs else 0)
 
     ckb = torch.load(args.base_ckpt, map_location="cpu")
-    baseM = oft.UNet3D(cin=12, cout=3, base=int(ckb.get("base", 24)))
+    assert bool(ckb.get("args", {}).get("velocity_inputs", False)) == args.velocity_inputs, "base checkpoint and --velocity-inputs disagree"
+    baseM = oft.UNet3D(cin=CIN, cout=3, base=int(ckb.get("base", 24)))
     baseM.load_state_dict(ckb["state_dict"]); baseM.eval(); baseM.to(dev)
     for p_ in baseM.parameters():
         p_.requires_grad_(False)
@@ -106,7 +113,7 @@ def main():
         z = torch.zeros(x0.shape[0], device=dev)
         return x0 + baseM(oft.net_input(x0, Pc, D), z, z)     # one Euler step at t=0
 
-    model = oft.UNet3D(cin=12, cout=3, base=24).to(dev)
+    model = oft.UNet3D(cin=CIN, cout=3, base=24).to(dev)
     print(f"residual-flow params: {sum(p.numel() for p in model.parameters())/1e6:.2f}M; base frozen")
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     ema = {k: v.detach().clone() for k, v in model.state_dict().items()}
@@ -168,7 +175,7 @@ def main():
 
     # ---- evaluation: emulator and generative, Lagrangian + Eulerian probes -------------
     bt = oft.Batcher(sc, te, np.random.default_rng(0), augment_on=False, growth=GR,
-                     octave_transverse=True)
+                     octave_transverse=True, velocity_inputs=args.velocity_inputs, vel_scale=VEL_SCALE)
     x0, x1, Pc, D = bt.make(te, eta="true")
     xb = base_pred(x0, Pc, D)
     s1 = torch.zeros(1, device=dev)
