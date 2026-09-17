@@ -2178,3 +2178,30 @@ the input information (receptive field over the coarse run's error band); the fl
 density coherence, which the qj form alone does not enforce — the Eulerian quadratic form Q_E (approved) on
 the residual flow is the natural next knob, with the generative-mode density as the readout.
 Provenance: runs/RF_resflow_psc/diag_rceiling.{json,png}; runs/diag_rceiling.py.
+
+## 2026-09-16 22:30 — C1 on the PSC series (production split: train sets 0-13, test 14), 64->128
+
+`hpc/run_phaseC.sh` (commit 9a99970; --octave-sampler full as in the laptop 64->128 runs; batch 1, base 24,
+3000 steps). A100 timings: 64->128 regression 0.78 s/step (40 min), residual flow 0.90 s/step (45 min).
+| run (set14, 64->128)                  | r_lag | P/P_lag | rms/h_f | Eul vs native 128 @ (kNy64, 1.5, 2) | laptop (s8, selfsim) |
+|---------------------------------------|-------|---------|---------|-------------------------------------|----------------------|
+| C1a F_reg_128_psc (base, 1 Euler)     | 0.728 | 0.542   | 0.485   | 1.645 / 2.189 / 2.603               | 0.729 / 0.539 / 0.480 |
+| C1b RF_resflow_128_psc emulator       | 0.677 | 0.993   | 0.570   | 0.978 / 0.821 / 0.602               | 0.677 / 0.970 / 0.563 |
+| C1b generative                        | 0.240 | 0.957   | 0.772   | 0.982 / 0.819 / 0.591               | 0.239 / 0.931 / 0.761 |
+-> the laptop 64->128 numbers are reproduced on the production series to the third digit (r), so the
+selfsim -> PSC move costs nothing and 14 training seeds instead of 8 change nothing at this capacity.
+lambda auto (C1b): see train.log. Multi-stream fraction of the 64 test run (set14): 0.374.
+
+Diagnostic `runs/diag_rceiling.py runs/RF_resflow_128_psc --set 14 --nc 128` (reference = native 256, converged
+to 0.1% in the 128 band, A.4): r_delta at k/k_Ny,128 = 0.2..1.0:
+| field      | r: 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0                        | P/P @0.9 | MS/SS r@0.9 | m(d>100) |
+|------------|---------------------------------------------------------------|----------|-------------|----------|
+| native 128 | 1.000 .999 .998 .996 .993 .990 .985 .979 .973                | 0.97     | .978/.974   | 0.161    |
+| C1a base   | 0.998 .994 .983 .969 .955 .935 .918 .898 .876                | 2.30     | .897/.893   | 0.193    |
+| C1b emu    | 0.999 .995 .986 .974 .961 .942 .926 .904 .882                | 0.69     | .900/.896   | 0.142    |
+| C1b gen    | 0.998 .993 .981 .968 .952 .930 .910 .884 .858                | 0.68     | .881/.873   | 0.142    |
+Same three facts as at 32->64, one level harder: the flow's r_delta(k) tracks the base's (+0.006 at 0.9
+k_Ny,128 here, i.e. essentially no phase gain), the ceiling is spatially uniform (MS/SS within 0.005), and it
+starts at the coarse Nyquist (r >= 0.99 below 0.4 k_Ny,128). The base's density excess is now +130% at 0.9
+k_Ny,128 (shrinkage in a 37%-multi-stream volume) and the flow's deficit -31%; J<0 fraction truth/base/emu
+0.418/0.412/0.419 (restored by the flow again). Provenance: runs/RF_resflow_128_psc/diag_rceiling.{json,png}.
