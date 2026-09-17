@@ -144,3 +144,26 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
   C2 = weight-shared 32->64 + 64->128 resflow with the level in the style scalar (owner pre-approved
   two-transition training); the one open diagnostic worth doing first is WHERE the r_delta ceiling (0.92)
   sits — a per-mask (multi-stream/parity) split of the B2 fields and an r(k) curve, using eval_eulerian.py.
+
+## 9. Cluster session 2026-09-16/17 — options 1+2+3 and the course-notes §1/§4 DONE (RUNLOG 21:10 .. 00:50)
+
+* Diagnostic (option 3): the residual flow adds NO phase (its r_delta(k) equals the base's at every k), the ceiling is
+  spatially uniform and starts at the coarse Nyquist; the flow only rescales power. Holds at 32->64 and 64->128.
+* C1 (production split 0-13/14, 64->128): base + residual flow reproduce the laptop numbers to the third digit.
+* C2: ONE weight-shared two-stage operator (shared regression base + shared residual flow, s_l = ln sigma_c) matches or
+  beats the specialists at both levels with half the parameters (`runs/multi_resflow_train.py`; M_reg_psc,
+  M_resflow_psc); the reg2 control (M_reg2_psc) shows a second regression stage raises r by 0.02 and worsens the
+  density excess — the flow's job is the power only.
+* §4 chain test (`runs/chain_martingale.py`): each step is conditionally unbiased given its OWN input (gamma_D ~ 0),
+  so it passes upstream low-k errors through (beta 0.85 at k < 0.5 k_Ny,64) and repairs them only in its correction
+  band (beta 0.28 near k_Ny,64); chain error = persistence of the first step's error, not a random walk; r_delta of the
+  chained 128 vs 256 drops to 0.72 (direct 0.90).
+* §1 true conditional samples (`runs/resample_octave_ic.py` -> 10 MP-Gadget runs -> `runs/condvar_analysis.py`,
+  sim_output/.../dmo-128-resample/set14): Var(fine|F_n)/P = 0.30 -> 0.71 across the octave; the same-IC rerun is
+  reproducible only to r 0.915 at k_Ny,128 in Psi but 0.998 in density; TRUE conditional samples have
+  P_delta/P_true = 1.01 +- 0.02 at r_delta 0.94 — the flow's -27..-30% deficit is its conditional being wrong, not
+  the price of r < 1. The emulator's r ceiling (0.91) is a model limit (physics floor 0.998 in density).
+* GPUs: HENON hold job 1216965 (kept), TWIG hold job 1234452 (released after C2c). One training per GPU.
+* NEXT (owner's call): the flow's conditional is the target — candidates: Q_E form on the residual flow
+  (approved), training/validating against the true conditional samples (more sets are cheap: 30 min per 128^3 run),
+  and the shared operator for the 64->512 chain. Per-box scatter: quote set14 AND a second box before any claim.

@@ -2341,3 +2341,49 @@ at 0.9 k_Ny,128 exists and is reachable in principle; (b) the emulator's ceiling
 and the true conditional's samples are the natural training/validation targets for whatever fixes it
 (e.g. the Q_E form on the residual flow, or training on multiple true conditional samples per coarse box).
 Provenance: runs/condvar_set14.{json,png}, runs/condvar_set14.log; ICs and sims under sim_output/.../dmo-128-resample.
+
+## 2026-09-17 00:50 — C2: ONE weight-shared two-stage operator for 32->64 AND 64->128 matches or beats the specialists with half the parameters
+
+`runs/multi_resflow_train.py` (commit 5fddead; s_l = ln sigma_c = per-level style scalar, steps alternate between the
+levels, 3000 per level, batch 2 / 1, lambda per level auto at its first step and pinned): C2a `--mode base`
+(runs/M_reg_psc, HENON A100, 0.46 s/step avg, 46 min), then in parallel C2b `--mode resflow` on the frozen shared
+base (runs/M_resflow_psc, HENON) and C2c `--mode reg2` (runs/M_reg2_psc, TWIG A100, owner allowed a second card
+2026-09-16 23:30; hpc/slurm_hold_gpu_twig.sh, job 1234452), 0.55 s/step, 55 min each. Same production split as C1
+(train 0-13, test 14). Specialists for comparison: S32a/S32b (runs/R_reg_psc14, RF_resflow_psc14) and C1a/C1b
+(runs/F_reg_128_psc, RF_resflow_128_psc). lambda: shared resflow 0.0164 (32->64) / 0.0123 (64->128).
+
+Lagrangian octave band vs the native fine run (emulator; generative in parentheses):
+| model (set14)                 | 32->64: r / P/P / rms         | 64->128: r / P/P / rms        | params |
+|-------------------------------|-------------------------------|-------------------------------|--------|
+| specialist base (S32a / C1a)  | 0.831 / 0.707 / 0.307         | 0.728 / 0.542 / 0.485         | 2 x 1.56M |
+| SHARED base (C2a)             | 0.839 / 0.714 / 0.299         | 0.737 / 0.552 / 0.479         | 1.56M  |
+| specialist resflow (S32b/C1b) | 0.796 / 0.992 / 0.352 (0.204) | 0.677 / 0.993 / 0.570 (0.240) | 2 x 3.11M |
+| SHARED resflow (C2b)          | 0.806 / 1.004 / 0.343 (0.205) | 0.685 / 0.982 / 0.561 (0.248) | 3.11M  |
+| SHARED reg2 control (C2c)     | 0.855 / 0.742 / 0.288 (0.239) | 0.755 / 0.575 / 0.468 (0.306) | 3.11M  |
+
+Eulerian density vs the CONVERGED reference (native 2c; eval_vs_ref, k < k_Ny,c), P/P at (k_Ny,c/2, 0.75, 0.9 k_Ny,c)
+and r_delta at 0.9 k_Ny,c:
+| model (set14)                 | 32->64 vs native 128                 | 64->128 vs native 256                |
+|-------------------------------|--------------------------------------|--------------------------------------|
+| native c run (truth)          | 0.986 / 0.987 / 0.998   r 0.969      | 0.985 / 0.982 / 0.972   r 0.979      |
+| specialist base               | 1.207 / 1.332 / 1.455   r 0.904      | 1.614 / 2.101 / 2.299   r 0.898      |
+| SHARED base                   | 1.205 / 1.368 / 1.518   r 0.905      | 1.624 / 2.129 / 2.342   r 0.900      |
+| specialist resflow emulator   | 0.984 / 0.872 / 0.805   r 0.906      | 0.969 / 0.824 / 0.688   r 0.904      |
+| SHARED resflow emulator       | 0.983 / 0.903 / 0.853   r 0.907      | 0.986 / 0.857 / 0.728   r 0.906      |
+| SHARED resflow generative     | 0.975 / 0.885 / 0.831   r 0.852      | 0.989 / 0.848 / 0.715   r 0.885      |
+| SHARED reg2 control emulator  | 1.239 / 1.486 / 1.701   r 0.905      | 1.690 / 2.322 / 2.633   r 0.900      |
+Verdict:
+1. Weight sharing across the two transitions costs nothing and gains a little at BOTH levels, for the base (r +0.008
+   / +0.009) and for the residual flow (r +0.010 / +0.008, density deficit at 0.9 k_Ny,c reduced from -19.5% to
+   -14.7% at 32->64 and from -31% to -27% at 64->128), with half the parameters of two specialist pairs. The
+   sigma-matched style scalar (RUNLOG 2026-09-09) does its job; this is the operator the 64->512 chain should use.
+2. The reg2 control separates the two-stage structure from the flow: a second regression stage raises r by 0.02 at
+   both levels (the best r of any model here, 0.855 / 0.755) but pushes the density excess further UP (1.70 / 2.63
+   at 0.9 k_Ny,c, worse than the base) — the second conditional mean shrinks again. The flow's entire contribution
+   is the power (from +52% / +134% to -15% / -27%), with the same r_delta (0.905-0.907) as every regression:
+   the r ceiling diagnostic (RUNLOG 21:10) holds for the shared operator too.
+3. Against the §1 ground truth: the true conditional samples sit at P/P = 1.01 with r_delta 0.938 at 0.9 k_Ny,128;
+   the best learned sampler (shared resflow, generative) is at 0.715 with r_delta 0.885. The gap is the flow's
+   conditional, not information (RUNLOG 00:00).
+Parameter accounting: shared base + shared flow = 3.11M for both levels vs 6.22M for the specialist pairs; reg2 = 3.11M.
+Provenance: runs/M_{reg,resflow,reg2}_psc/results_{32to64,64to128}.json and */{32to64,64to128}/vs_ref.json.
