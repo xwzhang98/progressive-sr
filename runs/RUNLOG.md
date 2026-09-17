@@ -2452,3 +2452,5 @@ consistent"; metrics to add to every evaluation: P_delta of low(model)+0 and of 
 coarse-band correction (r 0.90 at 0.9 k_Ny,c vs the 0.99 reproducibility) is where both the r_delta ceiling and,
 through band mismatch, part of the power deficit originate — consistent with "fix it upstream" (RFT2, §4).
 Provenance: runs/hybrid_set14.{json,log}; runs/M_{resflow,reg2}_psc_set15/.
+
+Addendum (2026-09-17 10:55): shared reg2, set15, 64->128 vs native 256, emulator:  (the table row above had only the Lagrangian numbers when it was written).
