@@ -1,0 +1,88 @@
+{
+ "args": {
+  "base_ckpt": "runs/M48_reg_psc/model_ema.pt",
+  "flow_ckpt": "runs/M48_resflow_psc/model_ema.pt",
+  "nc": 128,
+  "set": 13,
+  "s": [
+   2.0,
+   2.5,
+   3.0
+  ],
+  "nsteps": 8,
+  "device": "cuda",
+  "out": "runs/s_scan_M48_set13_b"
+ },
+ "2.000": {
+  "base": {
+   "r_low": 0.9664443938037244,
+   "r_high": 0.6674873932387622,
+   "ratio_P_high": 0.5060238063154137,
+   "ratio_P_low": 0.9271267900591702,
+   "eps_rel_low": 0.06477766007797851,
+   "rms_err_over_h": 0.7184916138648987,
+   "rms_err_over_h_multistream": 0.7825821042060852,
+   "rms_err_over_h_singlestream": 0.6687096357345581,
+   "multistream_fraction": 0.41787004470825195
+  },
+  "flow": {
+   "r_low": 0.9504086148594536,
+   "r_high": 0.6188526349746123,
+   "ratio_P_high": 0.8754899038057933,
+   "ratio_P_low": 0.9485746536399509,
+   "eps_rel_low": 0.09801466196692969,
+   "rms_err_over_h": 0.8429267406463623,
+   "rms_err_over_h_multistream": 0.9175724387168884,
+   "rms_err_over_h_singlestream": 0.7849797010421753,
+   "multistream_fraction": 0.41787004470825195
+  }
+ },
+ "2.500": {
+  "base": {
+   "r_low": 0.9613259675944323,
+   "r_high": 0.6488329696180348,
+   "ratio_P_high": 0.5383390185515309,
+   "ratio_P_low": 0.9200357546574095,
+   "eps_rel_low": 0.07462393988137364,
+   "rms_err_over_h": 0.749132513999939,
+   "rms_err_over_h_multistream": 0.81412273645401,
+   "rms_err_over_h_singlestream": 0.6987640857696533,
+   "multistream_fraction": 0.41787004470825195
+  },
+  "flow": {
+   "r_low": 0.9327520764334745,
+   "r_high": 0.5874893074952324,
+   "ratio_P_high": 0.9847269823292465,
+   "ratio_P_low": 0.9556854880232074,
+   "eps_rel_low": 0.1361127769642084,
+   "rms_err_over_h": 0.9404358863830566,
+   "rms_err_over_h_multistream": 1.0211925506591797,
+   "rms_err_over_h_singlestream": 0.8778995871543884,
+   "multistream_fraction": 0.41787004470825195
+  }
+ },
+ "3.000": {
+  "base": {
+   "r_low": 0.9541785400211941,
+   "r_high": 0.6258192951638061,
+   "ratio_P_high": 0.5604598334846984,
+   "ratio_P_low": 0.9118940915005574,
+   "eps_rel_low": 0.08837707079063083,
+   "rms_err_over_h": 0.789395809173584,
+   "rms_err_over_h_multistream": 0.8553732633590698,
+   "rms_err_over_h_singlestream": 0.7384082674980164,
+   "multistream_fraction": 0.41787004470825195
+  },
+  "flow": {
+   "r_low": 0.9110954464035662,
+   "r_high": 0.5520957390899118,
+   "ratio_P_high": 1.0736872359839722,
+   "ratio_P_low": 0.9657051038565689,
+   "eps_rel_low": 0.184213879730962,
+   "rms_err_over_h": 1.0482975244522095,
+   "rms_err_over_h_multistream": 1.1352118253707886,
+   "rms_err_over_h_singlestream": 0.9811713099479675,
+   "multistream_fraction": 0.41787004470825195
+  }
+ }
+}

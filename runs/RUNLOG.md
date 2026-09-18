@@ -2738,3 +2738,35 @@ VARIANCE; the style scalar alone does not carry it. Going beyond 128 requires tr
 256^3 training does not fit: inference alone peaks at 35 GB) — patch cropping is on the owner's ask-before list.
 Provenance: runs/chain_shared.log, runs/slurm_evalchain_1280611.log, runs/chain_{M48,M48J}_set{14,15}/{chain.json,vs_ref_*.json},
 runs/s_scan_M48_set13/s_scan.json.
+
+## 2026-09-18 13:00 — Owner APPROVED patch cropping (ask-before item) for 128->256; two design probes first
+
+(1) s-scan completed (runs/s_scan_M48_set13{,_b}; density vs native 512, set 13; runs/slurm_sscan_eval_1281620.log):
+| s     | flow octave P/P_lag, r_lag | coarse P_eps/P | P_delta/P @kNy128/0.75/0.9 kNy256 | r_delta@0.9 |
+|-------|----------------------------|----------------|-----------------------------------|-------------|
+| 0.655 | 0.555, 0.599               | 0.074          | 1.317 / 1.041 / 0.820             | 0.910       |
+| 0.958 | 0.617, 0.628               | 0.068          | 1.587 / 1.580 / 1.459             | 0.910       |
+| 1.215 | 0.679, 0.638  (physical)   | 0.069          | 1.689 / 1.832 / 1.805             | 0.905       |
+| 1.5   | 0.752, 0.638               | 0.075          | 1.669 / 1.799 / 1.774             | 0.897       |
+| 2.0   | 0.875, 0.619               | 0.098          | 1.421 / 1.275 / 1.119             | 0.871       |
+| 2.5   | 0.985, 0.587               | 0.136          | 1.106 / 0.768 / 0.580             | 0.821       |
+| 3.0   | 1.074, 0.552               | 0.184          | 0.828 / 0.447 / 0.292             | 0.769       |
+-> no s gives a flat density spectrum: raising s tilts it (low-k excess with high-k deficit) and costs coherence (r_delta
+0.91 -> 0.77, correction-band error x2.7). The level cannot be reached by re-conditioning; it must be trained.
+
+(2) Crop probe (`runs/crop_probe.py`, set 13, M48 at 128->256, runs/crop_probe/crop_probe.json): network output on a periodic
+crop vs the same region of the full-box output, relative rms by Chebyshev distance d from the crop face:
+| crop | base d = 0 / 4 / 16 / 48 | flow (t = 0.5) d = 0 / 4 / 16 / 48 | training-step peak memory (width 48, batch 1) |
+|------|--------------------------|------------------------------------|-----------------------------------------------|
+| 128  | 0.66 / 0.38 / 0.37 / 0.38 | 0.91 / 0.33 / 0.32 / 0.37         | 22.1 GB                                       |
+| 160  | 0.66 / 0.37 / 0.34 / 0.34 | 0.86 / 0.30 / 0.28 / 0.27         | 40.9 GB                                       |
+| 192  | 0.67 / 0.43 / 0.41 / 0.42 | 0.91 / 0.36 / 0.35 / 0.37         | OOM                                           |
+The local face contamination (circular padding wraps opposite crop faces) is gone within ~4 cells, but a 30-40% difference
+remains EVERYWHERE, including the crop centre: a GLOBAL effect — GroupNorm normalises over the whole input volume, so the
+statistics (and the face voxels' contribution to them) differ between a crop and the box. Consequence: a model trained on full
+boxes cannot be run on crops and vice versa; training and inference at the crop level must use the same crop geometry.
+Design adopted (standard overlap-tile, no model change): 128->256 trained on 128^3 fine crops (halo 16, loss on the 96^3
+interior; 32->64 and 64->128 stay full-box); all spectral operations (prolongation, D_ij, source octave, J/adj of the Q_J state)
+on the full box, then cropped; the Q_J error field is cos^2-tapered to zero inside the halo before its spectral gradient and
+the form is averaged over the interior only. Inference at that level: 128^3 tiles on the circularly padded full box, each
+tile contributes only its central 64^3 (>= 32 cells from its faces, i.e. deeper inside than any training-loss voxel).
