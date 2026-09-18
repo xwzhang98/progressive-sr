@@ -2631,3 +2631,17 @@ Recommendation (owner's call): (a) measure the capacity dose-response one step f
 at 64->128 with the shared operator) before any architecture change; (b) drop velocity inputs unless the halo-noise
 hypothesis is disproved; (c) production candidate = shared two-stage operator at width 48 (+ jac ~1 for generative use).
 Provenance: runs/cap_vel_probe.log; runs/{RF48,VF48,VFJ48}_resflow_psc14/{results_resflow,vs_ref}.json; runs/V48_reg_psc14/results.json.
+
+## 2026-09-17 22:05 — Session note + RFJ48 (base 48 + jac 1.2, no velocity): best density so far
+
+Session hygiene: the previous session instance kept running after the harness restart and, on its own, launched
+`hpc/run_cap2_probe.sh` (commit 003b380) with RFJ48 and a base-96 regression (20:04-20:41, "cap2 probe done"); the
+current session did not see that and re-launched a base-96 regression under the same name at 21:59 (25 min of GPU
+duplicated; results identical by construction, seed 0). No two trainings ever ran concurrently (checked: one step).
+runs/RFJ48_resflow_psc14 (frozen base runs/R_reg_psc14_b48, flow width 48, --jac-weight 1.2, split 0-13/14):
+  Lagrangian r 0.824, octave P/P 0.967, rms 0.327; density vs native 128 at k_Ny,32 / 0.75 / 0.9 k_Ny,64:
+  emulator 1.029 / 0.979 / 0.945 (r_delta 0.915), generative 1.030 / 0.971 / 0.935 (r_delta 0.863).
+-> capacity 48 + jac 1.2 WITHOUT velocity is the best pair of the project on set14 (0.945 at 0.9 k_Ny,64 vs 0.892
+for 48 alone, 0.880 for 48+velocity+jac): the two positive levers stack almost additively (+0.087, +0.053), and the
+velocity channels' -0.065 is confirmed a third time by subtraction. Density at k_Ny,32 now overshoots by 3% (the jac
+bias signature). Provenance: runs/RFJ48_resflow_psc14/{results_resflow,vs_ref}.json.
