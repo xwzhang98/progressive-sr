@@ -2694,3 +2694,47 @@ dmo-64/256/512 were never touched. Fix (2026-09-18 09:28): the 16 IC directories
 gitignored tree, `data/psc/dmo-128/setK/` is now a real directory holding `IC/` plus a `PART_009` symlink to the owner's run;
 the owner's set directories again contain only PART_009 (their directory mtimes now read 2026-09-18). All scripts keep the
 same paths. Rule for the future: per-level data under data/psc are real directories; only PART_009 is ever symlinked.
+
+## 2026-09-18 12:00 — First autoregressive chain 32->64->128->256 with the shared width-48 operator; 128->256 ZERO-SHOT
+
+`hpc/run_chain_shared.sh` -> `runs/chain_shared.py` (commit b3f606e; GPU 09:34-11:03 in HENON hold 1279890, full 256^3 boxes
+in fp32, peak 35.2 GB) + RM job 1280611 (`hpc/slurm_eval_chain.sh`, 37 min: density vs the native 2c run with the verified
+estimator; 256-level fields vs native 512 on a 512^3 mesh). Models: M48 (runs/M48_reg_psc + M48_resflow_psc) and M48J
+(same base + M48J_resflow_psc); trained levels 32->64 (s 0.655), 64->128 (s 0.958); 128->256 zero-shot with the extrapolated
+s = ln sigma_c = 1.215 (measured from the set-12/13 256^3 ICs; the measurement reproduces the checkpoint s at the trained
+levels to 1e-4). Every step emulator (true IC octave) and generative (own sampled octave); "from M" = chained from true M^3.
+Trained levels reproduce the models' own evaluations exactly (32->64 r 0.834, 64->128 r 0.719 on set14).
+
+Density P/P at (k_Ny,c/2, 0.75, 0.9 k_Ny,c) vs native 2c, r_delta at 0.9 k_Ny,c; M48, set14 | set15:
+| level / input                     | emulator set14                 | emulator set15                 | generative set14               |
+|-----------------------------------|--------------------------------|--------------------------------|--------------------------------|
+| native run (truth) 128 vs 256     | 0.985 / 0.982 / 0.972  r .979  | 0.983 / 0.978 / 0.973  r .977  | —                              |
+| 64->128 direct (true 64)          | 1.036 / 0.939 / 0.830  r .921  | 1.054 / 0.977 / 0.881  r .924  | 1.055 / 0.951 / 0.836  r .892  |
+| 64->128 chained from 32           | 1.035 / 0.933 / 0.823  r .758  | 1.062 / 0.965 / 0.884  r .788  | 1.069 / 0.935 / 0.818  r .599  |
+| native run (truth) 256 vs 512     | 0.993 / 0.990 / 0.988  r .978  | 0.995 / 0.988 / 0.983  r .977  | —                              |
+| 128->256 base (true 128), 0-shot  | 2.416 / 3.346 / 3.919  r .893  | 2.587 / 3.603 / 4.220  r .869  | —                              |
+| 128->256 direct, 0-shot           | 1.679 / 1.795 / 1.767  r .905  | 1.784 / 1.890 / 1.848  r .884  | 1.684 / 1.789 / 1.752  r .899  |
+| 128->256 chained from 64          | 1.765 / 1.866 / 1.779  r .731  | 1.922 / 1.989 / 1.936  r .737  | 1.804 / 1.873 / 1.771  r .668  |
+| 128->256 chained from 32          | 1.721 / 1.728 / 1.645  r .411  | 1.840 / 1.857 / 1.736  r .503  | 1.660 / 1.675 / 1.549  r .262  |
+M48J (jac 1.2): 64->128 direct 1.124/1.046/0.924 and chained 1.138/1.047/0.932 (set14), 1.144/1.090/0.988 and 1.163/1.081/0.988
+(set15); 128->256 direct 1.754/1.886/1.850 (set14), 1.871/1.999/1.954 (set15) -- jac makes the zero-shot excess WORSE.
+Lagrangian octave (emulator, M48 set14): 32->64 r .834 P/P .982; 64->128 direct .719/.978, chained .650/.960; 128->256 direct
+.633/.666, chained-from-64 .530/.654, chained-from-32 .469/.646; correction-band P_eps/P .026 / .049 (.131 chained) / .070
+(.193, .299 chained). Generative octave P/P at 128->256: 0.64.
+Findings:
+1. **Across the TRAINED levels the chain is power-stable**: chaining 32->64->128 leaves the 128-level density spectrum unchanged
+   (0.823 vs 0.830, 0.884 vs 0.881 at 0.9 k_Ny,128; generative likewise) — the upstream error only costs phase coherence
+   (r_delta 0.92 -> 0.76-0.79). Old width-24 specialist chain (RUNLOG 2026-09-16 23:50): 0.687 and r_delta 0.716.
+2. **Zero-shot 128->256: phase extrapolates, power does not.** r_delta 0.905 / 0.884 (as good as the trained levels) but the
+   density OVERSHOOTS by +68..85% across the band: the flow adds only 2/3 of the octave power (Lagrangian P/P 0.67 vs 0.98 at
+   the trained levels), so the field stays base-like (the base alone is +140..320% here: the conditional mean is far more
+   shrunk at this level). Chaining into the zero-shot level adds no further power error (1.65-1.94).
+3. **Style-scalar scan (runs/s_scan.py, set 13, 128->256, emulator)**: flow octave P/P 0.555 / 0.617 / 0.679 / 0.752 at
+   s = 0.655 / 0.958 / 1.215 / 1.5 (base 0.37 -> 0.46), r_lag 0.60 -> 0.64 then flat: monotonic but only ~+0.26 per unit s;
+   P/P = 1 would need s ~ 2.4, twice as far beyond the trained range as the physical value. Extension to s = 2, 2.5, 3 with
+   density running.
+Verdict: the weight-shared operator transfers phase information to an unseen level but not the level-dependent detail
+VARIANCE; the style scalar alone does not carry it. Going beyond 128 requires training data at 128->256, i.e. crops (full
+256^3 training does not fit: inference alone peaks at 35 GB) — patch cropping is on the owner's ask-before list.
+Provenance: runs/chain_shared.log, runs/slurm_evalchain_1280611.log, runs/chain_{M48,M48J}_set{14,15}/{chain.json,vs_ref_*.json},
+runs/s_scan_M48_set13/s_scan.json.
