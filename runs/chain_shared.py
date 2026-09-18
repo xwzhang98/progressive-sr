@@ -30,6 +30,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 import phase0_octaves as p0        # noqa: E402
 import octave_flow_toy as oft      # noqa: E402
+import tiling                      # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("multi_train", os.path.join(ROOT, "runs", "multi_train.py"))
 _mt = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_mt)
@@ -64,6 +65,10 @@ def main():
     baseM, ckb = load_unet(args.base_ckpt, dev)
     flowM, ckf = load_unet(args.flow_ckpt, dev)
     trained = dict(zip(ckf["args"]["levels"], ckf["s_values"]))
+    crops = dict(zip(ckf["args"]["levels"], ckf["args"].get("crops") or [0] * len(ckf["args"]["levels"])))
+    assert (ckb["args"].get("crops") or [0] * len(ckb["args"]["levels"])) == [crops[n] for n in ckb["args"]["levels"]], \
+        "base and flow were trained with different crop geometries"
+    tile_core = int(ckf["args"].get("tile_core", 64))
     assert ckb.get("s_values") == ckf.get("s_values"), "base and flow were trained with different style scalars"
     print(f"shared operator: base {args.base_ckpt} ({ckb.get('base')}), flow {args.flow_ckpt} ({ckf.get('base')}), "
           f"trained levels {sorted(trained)} s = {[round(v, 4) for v in ckf['s_values']]}", flush=True)
@@ -82,7 +87,12 @@ def main():
         print(f"level {Nc}->{Nf}: s checkpoint {trained.get(Nc)} | measured (sets {args.s_sets}) {s_meas:.4f} | used {s_l:.4f}"
               + ("  ZERO-SHOT (extrapolated)" if zs else "  trained"), flush=True)
         ms = oft.multistream_mask(sc, te["dis_c"])        # the TRUE coarse run's mask, for every input at this level
-        levels.append(dict(Nc=Nc, Nf=Nf, sc=sc, te=te, s=s_l, s_meas=s_meas, zero_shot=zs, ms=ms))
+        C = crops.get(Nc, 0)
+        if C:
+            print(f"   {Nc}->{Nf} was trained on {C}^3 crops: tiled inference, core {tile_core}", flush=True)
+        levels.append(dict(Nc=Nc, Nf=Nf, sc=sc, te=te, s=s_l, s_meas=s_meas, zero_shot=zs, ms=ms,
+                           netB=tiling.TiledNet(baseM, C, tile_core) if C else baseM,
+                           netF=tiling.TiledNet(flowM, C, tile_core) if C else flowM))
 
     def step(lv, dis_c, mode, gen):
         sc = lv["sc"]
@@ -92,8 +102,8 @@ def main():
         s = torch.full((1,), lv["s"], device=dev); z = torch.zeros(1, device=dev)
         amp = bool(args.amp_from) and lv["Nf"] >= args.amp_from
         with torch.no_grad(), torch.autocast(device_type=dev.type, dtype=torch.bfloat16, enabled=amp):
-            xb = x0 + baseM(oft.net_input(x0, Pc, D), z, s)
-            pred = oft.sample_flow(flowM, xb.float(), Pc, D, s, nsteps=args.nsteps)
+            xb = x0 + lv["netB"](oft.net_input(x0, Pc, D), z, s)
+            pred = oft.sample_flow(lv["netF"], xb.float(), Pc, D, s, nsteps=args.nsteps)
         hf = sc.hf
         out = (pred[0].float() * hf).cpu().numpy().astype(np.float32), (xb[0].float() * hf).cpu().numpy().astype(np.float32)
         del x0, x1, Pc, D, xb, pred

@@ -2770,3 +2770,19 @@ interior; 32->64 and 64->128 stay full-box); all spectral operations (prolongati
 on the full box, then cropped; the Q_J error field is cos^2-tapered to zero inside the halo before its spectral gradient and
 the form is averaged over the interior only. Inference at that level: 128^3 tiles on the circularly padded full box, each
 tile contributes only its central 64^3 (>= 32 cells from its faces, i.e. deeper inside than any training-loss voxel).
+
+## 2026-09-18 15:10 — C3 launched: shared width-48 operator trained on THREE levels, 128->256 on 128^3 crops
+
+Implementation (commit below): `tiling.py` (periodic crops, cos^2 halo taper, TiledNet = overlap-tile inference: circular pad by
+(C-S)/2, C^3 tiles, central S^3 core kept); `runs/multi_resflow_train.py --crops 0 0 128 --halo 16 --tile-core 64` (per-level
+crop side, 0 = full box; spectral ops and the Q_J state J/adj on the full box, then cropped; MSE on the interior; Q_J on a crop:
+error tapered across the halo, spectral gradient on the crop, form averaged over the interior; `--jac-weight` refused on crop
+levels); tiled evaluation at crop levels; `runs/chain_shared.py` reads each level's crop geometry from the checkpoints.
+Checks (`checks/tiling_check.py`): TiledNet and crop_periodic reproduce a local circular-conv network's full-box output EXACTLY
+(max rel diff 0); the crop Q_J reproduces the full-box form's interior mean to 2.6-3.7% for an octave-band error field
+(pointwise 19-21%; the spectral-derivative kernel is non-local, a larger halo does not help) — it is a slightly different but
+still ADMISSIBLE form (positive semi-definite, state-dependent only), and lambda is equalised per level anyway.
+Smoke tests (2 train sets, 6 steps/level): base and resflow run, peak GPU 21.4 / 22.3 GB; lambda at the crop level 0.0069;
+tiled 256^3 flow sampling (64 tiles x 17 network passes) ~4.5 min per prediction.
+Launched `JOBID=1279890 hpc/run_c3.sh`: C3a runs/M48c_reg_psc -> C3b runs/M48c_resflow_psc (split 0-13/14, 3000 steps per
+level, batches 2/1/1) -> chain 32->64->128->256 on sets 14 and 15 -> RM density job. Expected ~7 h.

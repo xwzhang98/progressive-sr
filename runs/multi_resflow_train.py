@@ -38,6 +38,7 @@ sys.path.insert(0, ROOT)
 import phase0_octaves as p0        # noqa: E402
 import octave_flow_toy as oft      # noqa: E402
 import eulerian_metric as em       # noqa: E402
+import tiling                      # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("multi_train", os.path.join(ROOT, "runs", "multi_train.py"))
 _mt = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_mt)
@@ -62,6 +63,10 @@ def main():
     ap.add_argument("--jac-weight", type=float, default=0.0, help="approved asinh(J) loss on the endpoint prediction (resflow mode; controlled bias)")
     ap.add_argument("--levels", type=int, nargs="+", default=[32, 64], help="coarse grids; fine = 2x")
     ap.add_argument("--batches", type=int, nargs="+", default=[2, 1])
+    ap.add_argument("--crops", type=int, nargs="+", default=None,
+                    help="per level: fine-grid crop side for training (0 = full box); owner approved patch cropping 2026-09-18")
+    ap.add_argument("--halo", type=int, default=16, help="crop cells excluded from the loss on every face")
+    ap.add_argument("--tile-core", type=int, default=64, help="inference at crop levels: tiles of the crop side, central core kept")
     ap.add_argument("--data", type=str, default="psc", choices=sorted(DATASETS))
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(14)))
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[14])
@@ -80,8 +85,11 @@ def main():
     dev = torch.device(args.device)
     DIS, IC, OFF = DATASETS[args.data]
 
+    crops = args.crops if args.crops is not None else [0] * len(args.levels)
+    assert len(crops) == len(args.levels) == len(args.batches), "--levels, --batches and --crops must align"
+    assert not (args.jac_weight > 0 and any(crops)), "--jac-weight is not implemented on cropped levels"
     levels = []
-    for Nc, batch in zip(args.levels, args.batches):
+    for Nc, batch, C in zip(args.levels, args.batches, crops):
         Nf = 2 * Nc
         sc = oft.Scaffold(Nc, Nf, L, OFF, 1.0, dev, window="cube")
         tr = oft.load_real(DIS, IC, Nc, Nf, args.train_seeds)
@@ -90,8 +98,11 @@ def main():
         rng = np.random.default_rng(args.seed + Nc)
         ba = oft.Batcher(sc, tr, rng, augment_on=True, growth=GR, octave_transverse=True)
         s_l = float(np.log(sigma_c([it["ic_f"] for it in tr], GR, Nc, L)))
-        levels.append(dict(Nc=Nc, Nf=Nf, batch=batch, sc=sc, tr=tr, te=te, ba=ba, s=s_l, lam=None))
-        print(f"level {Nc}->{Nf}: {len(tr)} train / {len(te)} test boxes, s_l = ln(sigma_c) = {s_l:.4f}", flush=True)
+        assert C == 0 or (C < Nf and C % 4 == 0 and C > 2 * args.halo and (C - args.tile_core) // 2 >= args.halo), f"bad crop {C}"
+        levels.append(dict(Nc=Nc, Nf=Nf, batch=batch, sc=sc, tr=tr, te=te, ba=ba, s=s_l, lam=None, crop=C,
+                           taper=tiling.taper(C, args.halo, sc.fdev) if C else None))
+        print(f"level {Nc}->{Nf}: {len(tr)} train / {len(te)} test boxes, s_l = ln(sigma_c) = {s_l:.4f}"
+              + (f", CROPPED training {C}^3 (halo {args.halo}), tiled inference core {args.tile_core}" if C else ", full box"), flush=True)
 
     baseM = None
     if args.mode != "base":
@@ -144,6 +155,20 @@ def main():
             lv = levels[(gstep - 1) % nlev]
             sc, ba, B = lv["sc"], lv["ba"], lv["batch"]
             x0, x1, Pc, D = ba.sample(B)
+            C, H = lv["crop"], args.halo
+            if C:
+                # all spectral operations were done on the full box inside ba.sample; the Q_J state (J, adj) too
+                if args.mode != "base":
+                    with torch.no_grad():
+                        Jf, adjf = em.jacobian_and_adjugate(Pc.detach(), sc.fdev)
+                o = [int(v_) for v_ in ba.rng.integers(0, lv["Nf"], size=3)]
+                x0, x1, Pc, D = (tiling.crop_periodic(a_, o, C) for a_ in (x0, x1, Pc, D))
+                if args.mode != "base":
+                    Jc = tiling.crop_periodic(Jf[:, None], o, C)[:, 0]
+                    Bn = adjf.shape[0]; Nn = adjf.shape[1]
+                    adjc = tiling.crop_periodic(adjf.reshape(Bn, Nn, Nn, Nn, 9).permute(0, 4, 1, 2, 3), o, C)
+                    adjc = adjc.permute(0, 2, 3, 4, 1).reshape(Bn, C, C, C, 3, 3)
+                    del Jf, adjf
             s = torch.full((B,), lv["s"], device=dev)
             if args.mode == "base":
                 src = x0
@@ -156,10 +181,18 @@ def main():
                 t = torch.zeros(B, device=dev); xt = src
             v = model(oft.net_input(xt, Pc, D), t, s)
             target = x1 - src
-            loss = F.mse_loss(v, target)
+            loss = F.mse_loss(tiling.interior(v, H), tiling.interior(target, H)) if C else F.mse_loss(v, target)
             if args.mode != "base":
                 e = v - target
-                term = em.jacobian_form(e, Pc.detach(), p=args.jac_p, eps=args.jac_eps, fft_device=sc.fdev)
+                if C:
+                    # Q_J on a crop: taper e to ~0 across the halo (smooth periodic continuation), exact spectral gradient
+                    # in the interior, form averaged over the interior only; J/adj from the full-box state
+                    dE = em.spectral_gradient(e * lv["taper"], sc.fdev).permute(0, 3, 4, 5, 1, 2)
+                    dJ = (adjc * dE.transpose(-1, -2)).sum(dim=(-1, -2))
+                    wq = (Jc ** 2 + args.jac_eps ** 2) ** (-args.jac_p / 2)
+                    term = tiling.interior(dJ ** 2 * wq, H).mean()
+                else:
+                    term = em.jacobian_form(e, Pc.detach(), p=args.jac_p, eps=args.jac_eps, fft_device=sc.fdev)
                 if lv["lam"] is None:
                     lv["lam"] = float(loss.detach() / term.detach().clamp_min(1e-30))
                     print(f"lambda[{lv['Nc']}->{lv['Nf']}] = {lv['lam']:.5g} (L_mse={float(loss):.4e}, L_qj={float(term):.4e})", flush=True)
@@ -186,9 +219,16 @@ def main():
                     "lams": [lv["lam"] for lv in levels], "s_values": [lv["s"] for lv in levels]},
                    os.path.join(args.out, "model_ema.pt"))
 
-    # ---- evaluation, per level --------------------------------------------------------------
+    # ---- evaluation, per level (crop levels: tiled inference with the training crop geometry) --------------------
     for lv in levels:
         sc = lv["sc"]; tag = f"{lv['Nc']}to{lv['Nf']}"
+        netM = tiling.TiledNet(model, lv["crop"], args.tile_core) if lv["crop"] else model
+        netB = (tiling.TiledNet(baseM, lv["crop"], args.tile_core) if lv["crop"] else baseM) if baseM is not None else None
+        def base_pred(x0, Pc, D, s, netB=netB):
+            z_ = torch.zeros(x0.shape[0], device=dev)
+            return x0 + netB(oft.net_input(x0, Pc, D), z_, s)
+        if dev.type == "cuda":
+            torch.cuda.empty_cache()
         teb = oft.Batcher(sc, lv["te"], np.random.default_rng(0), augment_on=False, growth=GR, octave_transverse=True)
         x0, x1, Pc, D = teb.make(lv["te"], eta="true")
         s = torch.full((1,), lv["s"], device=dev)
@@ -198,16 +238,16 @@ def main():
         with torch.no_grad():
             if args.mode == "base":
                 xb = x0; xbg = x0g
-                pred = x0 + model(oft.net_input(x0, Pc, D), z, s)
-                predg = x0g + model(oft.net_input(x0g, Pc, D), z, s)
+                pred = x0 + netM(oft.net_input(x0, Pc, D), z, s)
+                predg = x0g + netM(oft.net_input(x0g, Pc, D), z, s)
             else:
                 xb = base_pred(x0, Pc, D, s); xbg = base_pred(x0g, Pc, D, s)
                 if args.mode == "resflow":
-                    pred = oft.sample_flow(model, xb, Pc, D, s, nsteps=8)
-                    predg = oft.sample_flow(model, xbg, Pc, D, s, nsteps=8)
+                    pred = oft.sample_flow(netM, xb, Pc, D, s, nsteps=8)
+                    predg = oft.sample_flow(netM, xbg, Pc, D, s, nsteps=8)
                 else:
-                    pred = xb + model(oft.net_input(xb, Pc, D), z, s)
-                    predg = xbg + model(oft.net_input(xbg, Pc, D), z, s)
+                    pred = xb + netM(oft.net_input(xb, Pc, D), z, s)
+                    predg = xbg + netM(oft.net_input(xbg, Pc, D), z, s)
         g = sc.gf; W = sc.W.cpu().numpy(); knyc = sc.knyc; hf = sc.hf
         def lag(a, b):
             s_ = p0.spectra_k(g, p0.rfftn(a.astype(np.float32)) * (1 - W), p0.rfftn(b.astype(np.float32)) * (1 - W), kmin=knyc)
