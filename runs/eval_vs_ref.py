@@ -31,9 +31,9 @@ DATASETS = {"psc": ("data/psc/dmo-{N}/set{seed}/PART_009/disp.npy", 0.5),
             "selfsim": ("data/selfsim/s{seed}/dis_{N}.npy", 0.0)}
 
 
-def deposit(psi_kpc, n, offset):
+def deposit(psi_kpc, n, offset, mesh=256):
     f = psi_kpc.astype(np.float64) / 1000.0 + offset * (L_MPC / n)
-    return density_coeff(f)[0]
+    return density_coeff(f, mesh=mesh)[0]
 
 
 def main():
@@ -43,30 +43,32 @@ def main():
     ap.add_argument("--nc", type=int, default=64, help="grid of the predicted field")
     ap.add_argument("--data", default="psc", choices=sorted(DATASETS))
     ap.add_argument("--fields", nargs="+", default=["truth", "base", "emulator", "generative"])
+    ap.add_argument("--mesh", type=int, default=256, help="common analysis mesh (use 512 for 256^3 predictions vs native 512)")
+    ap.add_argument("--tag", default=None, help="write vs_ref_<tag>.json instead of vs_ref.json")
     args = ap.parse_args()
     pat, off = DATASETS[args.data]
     nc, nf = args.nc, 2 * args.nc
     kny = {n: np.pi * n / L_MPC for n in (nc // 2, nc)}
     probes = {f"kny{nc // 2}": kny[nc // 2], f"075kny{nc}": 0.75 * kny[nc], f"09kny{nc}": 0.9 * kny[nc]}
-    sh = Shells(256)
+    sh = Shells(args.mesh)
     ref_field = np.load(pat.replace("{N}", str(nf)).replace("{seed}", str(args.set)))
-    ref = deposit(ref_field, nf, off)
+    ref = deposit(ref_field, nf, off, args.mesh)
     for run in args.runs:
-        out = {"set": args.set, "nc": nc, "reference": f"native {nf}", "offset": off}
+        out = {"set": args.set, "nc": nc, "reference": f"native {nf}", "offset": off, "mesh": args.mesh}
         for nm in args.fields:
             path = os.path.join(run, f"field_{nm}.npy")
             if not os.path.exists(path):
                 continue
             f = np.load(path)
             assert f.shape == (3, nc, nc, nc), (path, f.shape)
-            st = band_stats(sh.powers(deposit(f, nc, off), ref), kny[nc], probes)
+            st = band_stats(sh.powers(deposit(f, nc, off, args.mesh), ref), kny[nc], probes)
             out[nm] = st
             print(f"[{os.path.basename(run.rstrip('/'))} set{args.set}] {nm:10s} vs native{nf}: "
                   f"P/P @kNy{nc // 2}={st[f'ratio_at_kny{nc // 2}']:.3f} 0.75kNy{nc}={st[f'ratio_at_075kny{nc}']:.3f} "
                   f"0.9kNy{nc}={st[f'ratio_at_09kny{nc}']:.3f} | r@0.9kNy{nc}={st[f'r_at_09kny{nc}']:.3f} | "
                   f"band min/max P/P={min(st['Pratio']):.3f}/{max(st['Pratio']):.3f} | 1%/5% to k={st['within1pc']:.2f}/{st['within5pc']:.2f}",
                   flush=True)
-        with open(os.path.join(run, "vs_ref.json"), "w") as fh:
+        with open(os.path.join(run, f"vs_ref_{args.tag}.json" if args.tag else "vs_ref.json"), "w") as fh:
             json.dump(out, fh, indent=1)
 
 
