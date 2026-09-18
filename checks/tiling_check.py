@@ -83,5 +83,36 @@ def main():
     print(f"   worst interior-mean deviation {worst:.2e} (small = crop Q_J reproduces the full-box form)")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and len(sys.argv) == 1:
     main()
+
+
+def check_augment_equivalence():
+    """3. GPU/crop augmentation == numpy augmentation of the raw fields before make() (64->128 level of PSC set 0, CPU)."""
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    import octave_flow_toy as oft
+    torch.set_default_dtype(torch.float32)
+    DIS, IC = "data/psc/dmo-{N}/set{seed}/PART_009/disp.npy", "data/psc/dmo-{N}/set{seed}/IC/disp.npy"
+    sc = oft.Scaffold(64, 128, 100000.0, 0.5, 1.0, torch.device("cpu"), window="cube")
+    it = oft.load_real(DIS, IC, 64, 128, [0])[0]
+    worst = 0.0
+    for seed in range(6):
+        rA = np.random.default_rng(seed); rB = np.random.default_rng(seed)
+        dc, df, icf = oft.augment([it["dis_c"], it["dis_f"], it["ic_f"]], rA, 0.5)
+        bA = oft.Batcher(sc, [], rA, augment_on=False, growth=76.7439, octave_transverse=True)
+        xA = bA.make([dict(dis_c=dc, dis_f=df, ic_f=icf)], eta="true")
+        JA, adjA = em.jacobian_and_adjugate(xA[2])
+        xR = bA.make([it], eta="true")
+        JR, adjR = em.jacobian_and_adjugate(xR[2])
+        (x0, x1, Pc), (D, adj), (J,) = tiling.augment_crops(rB, vecs=xR[:3], tens=(xR[3].reshape(1, 3, 3, 128, 128, 128),
+                                                                                   adjR.permute(0, 4, 5, 1, 2, 3)), scals=(JR,))
+        pairs = (("x0", x0, xA[0]), ("x1", x1, xA[1]), ("Pc", Pc, xA[2]), ("D", D.reshape(1, 9, 128, 128, 128), xA[3]),
+                 ("J", J, JA), ("adj", adj.permute(0, 3, 4, 5, 1, 2), adjA))
+        errs = {nm: float((a - b).abs().max() / b.abs().max()) for nm, a, b in pairs}
+        worst = max(worst, max(errs.values()))
+        print(f"3  seed {seed}: " + "  ".join(f"{k} {v:.1e}" for k, v in errs.items()))
+    print(f"   worst max rel diff {worst:.1e} (float32 FFT round-off expected)")
+
+
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "augment":
+    check_augment_equivalence()

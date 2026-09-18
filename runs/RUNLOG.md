@@ -2786,3 +2786,8 @@ Smoke tests (2 train sets, 6 steps/level): base and resflow run, peak GPU 21.4 /
 tiled 256^3 flow sampling (64 tiles x 17 network passes) ~4.5 min per prediction.
 Launched `JOBID=1279890 hpc/run_c3.sh`: C3a runs/M48c_reg_psc -> C3b runs/M48c_resflow_psc (split 0-13/14, 3000 steps per
 level, batches 2/1/1) -> chain 32->64->128->256 on sets 14 and 15 -> RM density job. Expected ~7 h.
+Restart 2026-09-18 17:25: the first C3a attempt ran CPU-bound (1.93 s/step, GPU utilisation 37%): the numpy cube-group
+augmentation of a 256^3 training sample costs 1.4 s. Crop levels now skip it and augment the CROPS on the GPU instead
+(`tiling.augment_crops`: vectors, rank-2 tensors D_ij and adj, scalar J), which is exactly equivalent because every scaffold
+operation commutes with the cube group (checks/tiling_check.py augment: max rel diff <= 7.7e-6 for x0, x1, Pc, D, J, adj over
+6 group elements = float32 FFT round-off). Full-box levels keep the numpy augmentation unchanged. First attempt deleted.

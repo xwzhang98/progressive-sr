@@ -62,3 +62,30 @@ class TiledNet(nn.Module):
                         out = x.new_zeros((x.shape[0], y.shape[1], N, N, N), dtype=y.dtype)
                     out[:, :, a:a + S, b:b + S, c:c + S] = y[:, :, m:m + S, m:m + S, m:m + S]
         return out
+
+
+def augment_crops(rng, vecs=(), tens=(), scals=()):
+    """Cubic-group augmentation of crops ON THE DEVICE, the same group element and convention as octave_flow_toy.augment
+    (offset != 0: a flip i -> N-1-i is the reflection x -> L - x). Because every spectral operation of the scaffold commutes
+    with the cube group, augmenting the outputs (and crops) is equivalent to augmenting the raw fields before make() — it just
+    avoids the numpy copies of full 256^3 boxes (checks/tiling_check.py verifies the equivalence).
+      vecs : (B, 3, C, C, C) vector fields (displacements)          v'_c(x') = s_c v_{perm c}(x)
+      tens : (B, 3, 3, C, C, C) rank-2 tensors (D_ij = d_i Psi_j, adj) T'_ij = s_i s_j T_{perm i, perm j}
+      scals: (B, C, C, C) scalars (J)
+    Draws the group element exactly like octave_flow_toy.augment: rng.permutation(3), then rng.integers(0, 2, 3)."""
+    perm = [int(v) for v in rng.permutation(3)]
+    flips = rng.integers(0, 2, size=3).astype(bool)
+
+    def spatial(x, lead):
+        x = x.permute(*range(lead), *[lead + a for a in perm])
+        dims = [lead + a for a in range(3) if flips[a]]
+        return torch.flip(x, dims) if dims else x
+
+    def sgn(like):
+        return torch.tensor([-1.0 if f else 1.0 for f in flips], device=like.device, dtype=like.dtype)
+
+    out_v = [(spatial(v[:, perm], 2) * sgn(v).view(1, 3, 1, 1, 1)).contiguous() for v in vecs]
+    out_t = [(spatial(T[:, perm][:, :, perm], 3) * (sgn(T).view(1, 3, 1, 1, 1, 1) * sgn(T).view(1, 1, 3, 1, 1, 1))).contiguous()
+             for T in tens]
+    out_s = [spatial(s_, 1).contiguous() for s_ in scals]
+    return out_v, out_t, out_s

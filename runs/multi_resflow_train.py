@@ -96,7 +96,8 @@ def main():
         te = oft.load_real(DIS, IC, Nc, Nf, args.test_seeds[:1])
         sc.fit_linear_power([it["ic_f"] * GR for it in tr])
         rng = np.random.default_rng(args.seed + Nc)
-        ba = oft.Batcher(sc, tr, rng, augment_on=True, growth=GR, octave_transverse=True)
+        # crop levels: no numpy augmentation of full boxes (CPU-bound at 256^3); the crops are augmented on the GPU instead
+        ba = oft.Batcher(sc, tr, rng, augment_on=(C == 0), growth=GR, octave_transverse=True)
         s_l = float(np.log(sigma_c([it["ic_f"] for it in tr], GR, Nc, L)))
         assert C == 0 or (C < Nf and C % 4 == 0 and C > 2 * args.halo and (C - args.tile_core) // 2 >= args.halo), f"bad crop {C}"
         levels.append(dict(Nc=Nc, Nf=Nf, batch=batch, sc=sc, tr=tr, te=te, ba=ba, s=s_l, lam=None, crop=C,
@@ -169,6 +170,15 @@ def main():
                     adjc = tiling.crop_periodic(adjf.reshape(Bn, Nn, Nn, Nn, 9).permute(0, 4, 1, 2, 3), o, C)
                     adjc = adjc.permute(0, 2, 3, 4, 1).reshape(Bn, C, C, C, 3, 3)
                     del Jf, adjf
+                # cube-group augmentation of the crops (equivalent to augmenting the raw fields, checks/tiling_check.py 3)
+                Bn = x0.shape[0]
+                if args.mode != "base":
+                    (x0, x1, Pc), (D33, adj33), (Jc,) = tiling.augment_crops(ba.rng, vecs=(x0, x1, Pc),
+                        tens=(D.reshape(Bn, 3, 3, C, C, C), adjc.permute(0, 4, 5, 1, 2, 3)), scals=(Jc,))
+                    adjc = adj33.permute(0, 3, 4, 5, 1, 2)
+                else:
+                    (x0, x1, Pc), (D33,), _ = tiling.augment_crops(ba.rng, vecs=(x0, x1, Pc), tens=(D.reshape(Bn, 3, 3, C, C, C),))
+                D = D33.reshape(Bn, 9, C, C, C)
             s = torch.full((B,), lv["s"], device=dev)
             if args.mode == "base":
                 src = x0
