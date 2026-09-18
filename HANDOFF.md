@@ -188,3 +188,13 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
   probe for the detail coherence (cheap, not yet done); (c) accept the two-stage shared operator + jac-weight ~1 as the
   production model and move to the 64->512 chain (needs patch cropping: ask-before list).
 * GPU: HENON hold job 1216965 expires ~2026-09-18 16:30; TWIG released.
+
+## 11. Cluster session 2026-09-17 evening — capacity / velocity / jac ledger (RUNLOG 17:40, 20:10)
+
+* Owner approved velocity INPUTS (`--velocity-inputs`: d_i(v_c/aHf)_j - D_ij, 9 channels) and a capacity probe.
+* Capacity (width 24 -> 48, both stages) is the strongest lever found: emulator density at 0.9 k_Ny,64 0.805 -> 0.892,
+  r_lag +0.024, r_delta +0.009; not saturated. Velocity inputs raise r_lag/r_delta slightly but COST density power
+  (-0.05..-0.065, twice) — drop unless explained. jac-weight ~1.2 stacks (+0.05). Best emulator density RF48 0.892
+  (r_delta 0.915); best generative VFJ48 0.900 (r_delta 0.857). Oracle bound: density 0.874 / r_delta 0.967.
+* NEXT (owner's call): capacity dose-response (width 96 at 32->64; shared operator at width 48 for both levels),
+  second box (set15) for RF48/VFJ48, then the chain. GPU: HENON hold 1216965 expires 2026-09-18 ~16:30.

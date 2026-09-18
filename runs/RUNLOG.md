@@ -2599,3 +2599,35 @@ Reading:
   the coarse run's own Nyquist error), consistent with Var(fine | F_n) of RUNLOG 00:00 (1-9% across the band).
 Not done (would complete the picture, owner's call): base 48 + velocity, and a residual flow on the base-48 base.
 Provenance: runs/vel_probe.log, runs/{R_reg_psc14_b48,V_reg_psc14}/results.json, runs/VF_resflow_psc14/{results_resflow,vs_ref}.json.
+
+## 2026-09-17 20:10 — Capacity x velocity x jac at 32->64 (owner: "可以继续"): CAPACITY is the strongest lever found; velocity inputs cost density power twice
+
+`hpc/run_cap_vel_probe.sh` (commit 3ff1f53; `resflow_train --flow-base`). Split 0-13/14, 3000 steps, batch 2, HENON A100;
+flow width = base width in every pair below. Density vs native 128 (set14), P/P at k_Ny,32 / 0.75 / 0.9 k_Ny,64, r_delta at 0.9:
+| pair (base -> residual flow)          | params (base+flow) | r_lag | octave P/P | rms   | emulator P_delta/P     | r_delta | generative P_delta/P   | gen r_delta |
+|---------------------------------------|--------------------|-------|------------|-------|------------------------|---------|------------------------|-------------|
+| 24 -> 24 (control, RF_resflow_psc14)  | 1.56M + 1.56M      | 0.796 | 0.992      | 0.352 | 0.984 / 0.872 / 0.805  | 0.906   | 0.984 / 0.868 / 0.799  | 0.85        |
+| 24 -> 24, jac 1.2                      | same               | 0.802 | 0.966      | 0.345 | 1.011 / 0.916 / 0.860  | 0.908   | 1.011 / 0.910 / 0.852  | 0.858       |
+| 24 -> 24, velocity (VF_resflow_psc14) | same (+9 ch)       | 0.803 | 0.994      | 0.347 | 0.949 / 0.821 / 0.754  | 0.918   | 0.936 / 0.814 / 0.742  | 0.867       |
+| shared 24 (M_resflow_psc, both levels)| 1.56M + 1.56M      | 0.806 | 1.004      | 0.343 | 0.983 / 0.903 / 0.853  | 0.907   | 0.975 / 0.885 / 0.831  | 0.852       |
+| 48 -> 48 (RF48_resflow_psc14)         | 5.85M + 5.85M      | 0.820 | 0.991      | 0.333 | 1.001 / 0.936 / 0.892  | 0.915   | 1.005 / 0.933 / 0.887  | 0.860       |
+| 48 -> 48, velocity (VF48)             | same (+9 ch)       | 0.825 | 0.986      | 0.327 | 0.970 / 0.873 / 0.827  | 0.915   | 0.981 / 0.887 / 0.846  | 0.856       |
+| 48 -> 48, velocity + jac 1.2 (VFJ48)  | same               | 0.829 | 0.960      | 0.321 | 0.999 / 0.921 / 0.880  | 0.916   | 1.008 / 0.934 / 0.900  | 0.857       |
+| oracle coarse band 24 -> 24 (bound)   | —                  | 0.868 | 0.969      | 0.239 | 0.968 / 0.912 / 0.874  | 0.967   | 0.934 / 0.832 / 0.780  | 0.946       |
+Bases alone: 24: r 0.831 / coarse P_eps/P 0.0280; 24+vel 0.836 / 0.0265; 48 0.852 / 0.0249; 48+vel 0.857 / 0.0235.
+Findings:
+1. **Capacity is the strongest single lever found in this project**: 3.75x parameters take the emulator density at
+   0.9 k_Ny,64 from 0.805 to 0.892 (+0.087, more than jac 1.2 (+0.055) or weight sharing (+0.05)), r_lag +0.024, rms -5%,
+   and r_delta +0.009 — and it beats the oracle-coarse pair's DENSITY (0.874) while staying far below its r_delta (0.967).
+   No sign of saturation between 24 and 48; the dose-response above 48 is not measured.
+2. **Velocity inputs cost density power, reproducibly**: -0.05 at width 24 and -0.065 at width 48, both in emulator and
+   (at 24) generative mode, while r_lag rises (+0.005) and r_delta rises (+0.01). Two runs, same sign and size: real,
+   unexplained. Hypothesis to test later: the coarse velocity inside halos is virial noise, d_i(v/aHf)_j - D_ij is
+   O(10) there, and the network learns to pull those regions toward the base's (shrunk) solution.
+3. jac 1.2 on top of velocity + 48 recovers +0.053 (0.827 -> 0.880) with the usual -2.6% Lagrangian P/P drift; the best
+   GENERATIVE density of the project is VFJ48 (0.900 at 0.9 k_Ny,64, r_delta 0.857), the best EMULATOR density RF48
+   (0.892, r_delta 0.915). Neither beats 0.90; the true conditional's 1.01 at r_delta 0.94 (64->128) stands.
+Recommendation (owner's call): (a) measure the capacity dose-response one step further (width 96 at 32->64; width 48
+at 64->128 with the shared operator) before any architecture change; (b) drop velocity inputs unless the halo-noise
+hypothesis is disproved; (c) production candidate = shared two-stage operator at width 48 (+ jac ~1 for generative use).
+Provenance: runs/cap_vel_probe.log; runs/{RF48,VF48,VFJ48}_resflow_psc14/{results_resflow,vs_ref}.json; runs/V48_reg_psc14/results.json.
