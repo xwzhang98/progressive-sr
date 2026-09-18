@@ -59,6 +59,7 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--jac-p", type=float, default=2.0)
     ap.add_argument("--jac-eps", type=float, default=0.1)
+    ap.add_argument("--jac-weight", type=float, default=0.0, help="approved asinh(J) loss on the endpoint prediction (resflow mode; controlled bias)")
     ap.add_argument("--levels", type=int, nargs="+", default=[32, 64], help="coarse grids; fine = 2x")
     ap.add_argument("--batches", type=int, nargs="+", default=[2, 1])
     ap.add_argument("--data", type=str, default="psc", choices=sorted(DATASETS))
@@ -163,6 +164,9 @@ def main():
                     lv["lam"] = float(loss.detach() / term.detach().clamp_min(1e-30))
                     print(f"lambda[{lv['Nc']}->{lv['Nf']}] = {lv['lam']:.5g} (L_mse={float(loss):.4e}, L_qj={float(term):.4e})", flush=True)
                 loss = loss + lv["lam"] * term
+                if args.jac_weight > 0 and args.mode == "resflow":
+                    x1p = xt + (1 - t)[:, None, None, None, None] * v
+                    loss = loss + args.jac_weight * oft.jac_loss(sc, x1p, x1)
             opt.zero_grad(set_to_none=True); loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0); opt.step()
             with torch.no_grad():
