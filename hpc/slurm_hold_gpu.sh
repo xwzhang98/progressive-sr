@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:a100-40:1
-#SBATCH --time=2-00:00:00
+#SBATCH --time=5-00:00:00
 #SBATCH --output=runs/slurm_hold_%x-%j.log
 # Hold ONE A100 on HENON-GPU (owner's allowance, 2026-09-16) and launch experiments into it with
 #   srun --jobid=<this job> --overlap --exact --ntasks=1 --cpus-per-task=8 --gres=gpu:1 ... python -u ...

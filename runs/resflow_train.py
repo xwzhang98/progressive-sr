@@ -76,6 +76,7 @@ def main():
     ap.add_argument("--oracle-coarse", action="store_true", help="DIAGNOSTIC: condition on R Psi_f, train and test")
     ap.add_argument("--velocity-inputs", action="store_true", help="base AND flow condition also on the coarse velocity (9 channels)")
     ap.add_argument("--flow-base", type=int, default=24, help="width of the residual-flow UNet (capacity probe)")
+    ap.add_argument("--eval-only", type=str, default=None, help="residual-flow checkpoint: skip training, evaluate on --test-seeds")
     ap.add_argument("--cic-weight", type=float, default=0.0,
                     help="approved NONLINEAR Eulerian loss on the x-prediction (CIC density of q + x1_pred vs truth); a controlled "
                          "bias for the flow -- read GENERATIVE mode too")
@@ -128,6 +129,10 @@ def main():
         torch.manual_seed(args.seed + step0); ba.rng = np.random.default_rng(args.seed + step0)
         print(f"resumed from step {step0}")
 
+    if args.eval_only:
+        cke = torch.load(args.eval_only, map_location=dev)
+        model.load_state_dict(cke["state_dict"]); lam = cke.get("lam", lam); step0 = args.steps
+        print(f"eval-only: {args.eval_only} on test set {args.test_seeds[0]}", flush=True)
     s_t = torch.zeros(args.batch, device=dev)
     t0 = time.time()
     for step in range(step0 + 1, args.steps + 1):
@@ -170,9 +175,11 @@ def main():
             print(f"time budget reached at step {step}/{args.steps}; state saved")
             return
 
-    model.load_state_dict(ema); model.eval()
-    torch.save({"state_dict": model.state_dict(), "base": args.flow_base, "lam": lam, "args": vars(args)},
-               os.path.join(args.out, "model_ema.pt"))
+    if not args.eval_only:
+        model.load_state_dict(ema)
+        torch.save({"state_dict": model.state_dict(), "base": args.flow_base, "lam": lam, "args": vars(args)},
+                   os.path.join(args.out, "model_ema.pt"))
+    model.eval()
 
     # ---- evaluation: emulator and generative, Lagrangian + Eulerian probes -------------
     bt = oft.Batcher(sc, te, np.random.default_rng(0), augment_on=False, growth=GR,
