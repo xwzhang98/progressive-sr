@@ -2645,3 +2645,27 @@ runs/RFJ48_resflow_psc14 (frozen base runs/R_reg_psc14_b48, flow width 48, --jac
 for 48 alone, 0.880 for 48+velocity+jac): the two positive levers stack almost additively (+0.087, +0.053), and the
 velocity channels' -0.065 is confirmed a third time by subtraction. Density at k_Ny,32 now overshoots by 3% (the jac
 bias signature). Provenance: runs/RFJ48_resflow_psc14/{results_resflow,vs_ref}.json.
+
+## 2026-09-18 02:00 — Capacity saturates between width 48 and 96 at 32->64; the shared width-48 operator gains most at 64->128; set15 confirms
+
+`hpc/run_cap2_probe.sh` (commit aa84f7c), HENON hold 1279890 (5 days). Split 0-13/14 unless stated.
+(1) Width 96, 32->64 (runs/R_reg_psc14_b96 22.7M params, runs/RF96_resflow_psc14): base r 0.862, coarse P_eps/P 0.0232, rms 0.281;
+    pair r_lag 0.833, emulator density 0.990 / 0.925 / 0.891 (r_delta 0.920), generative 0.990 / 0.935 / 0.906 (0.851).
+    Capacity dose-response at 0.9 k_Ny,64: width 24 0.805 -> 48 0.892 -> 96 0.891: SATURATED in density between 48 and 96,
+    while r_lag (0.796 -> 0.820 -> 0.833) and r_delta (0.906 -> 0.915 -> 0.920) still creep up. Width 48 is the sweet spot.
+(2) Shared two-level operator at width 48 (runs/M48_reg_psc -> runs/M48_resflow_psc; 5.85M + 5.85M for BOTH levels):
+| shared operator, emulator (generative) | 32->64 vs native 128: P/P @kNy32/0.75/0.9 kNy64, r_delta@0.9 | 64->128 vs native 256 (@kNy64/0.75/0.9 kNy128) |
+|----------------------------------------|---------------------------------------------------------------|------------------------------------------------|
+| width 24 (M_resflow_psc)               | 0.983 / 0.903 / 0.853  r 0.907  (gen 0.831, 0.852)             | 0.986 / 0.857 / 0.728  r 0.906  (gen 0.715, 0.885) |
+| width 48 (M48_resflow_psc)             | 0.999 / 0.937 / 0.900  r 0.929  (gen 0.918, 0.859)             | 1.036 / 0.939 / 0.830  r 0.921  (gen 0.834, 0.896) |
+    Lagrangian: 32->64 r 0.834 / P/P 0.982 / rms 0.316; 64->128 r 0.719 / 0.978 / 0.531 (width 24: 0.806 and 0.685).
+    -> at 64->128 (the harder level, 37% multi-stream) width 48 buys +0.10 in density and +0.034 in r_lag — more than at
+    32->64 — and r_delta 0.929 at 32->64 is the best of any non-oracle model. The shared width-48 operator is the
+    production candidate (RUNLOG 20:10 recommendation confirmed).
+(3) Second box (set15, eval-only): RF48 emulator 0.986 / 0.889 / 0.852 (r_delta 0.939; set14 0.892 / 0.915), generative 0.871;
+    VFJ48 (48 + velocity + jac) 1.001 / 0.912 / 0.879 (0.940; set14 0.880 / 0.916), generative 0.892. Box-to-box scatter in
+    density +-0.04 (set15's native 64 sits at 0.971 vs 0.998 on set14), r_delta consistently +0.02 higher on set15: every
+    ranking from set14 holds.
+Ledger at 0.9 k_Ny,64 (32->64, set14, emulator density / r_delta): control 0.805/0.906; shared24 0.853/0.907; jac1.2 0.860/0.908;
+48 0.892/0.915; 96 0.891/0.920; 48+jac1.2 (RFJ48) 0.945/0.915; shared48 0.900/0.929; oracle 0.874/0.967; truth-level 1.0/0.97.
+Provenance: runs/cap2_probe.log; runs/{R_reg_psc14_b96,RF96_resflow_psc14,M48_reg_psc,M48_resflow_psc,RF48_resflow_psc14_set15,VFJ48_resflow_psc14_set15}/.

@@ -1,0 +1,74 @@
+{
+ "lam": 0.015868276357650757,
+ "base": {
+  "r_high": 0.8598784924394429,
+  "ratio_P_high": 0.764916671958654,
+  "rms": 0.28273773193359375,
+  "eul": [
+   1.2465842680408115,
+   1.4145824491793813,
+   1.753292750629042
+  ]
+ },
+ "emulator": {
+  "r_high": 0.8278614315866535,
+  "ratio_P_high": 1.006828281074025,
+  "rms": 0.32579490542411804,
+  "eul": [
+   1.012916731503164,
+   0.9183884223016181,
+   0.8605171129868298
+  ]
+ },
+ "generative": {
+  "r_high": 0.2105553377672999,
+  "ratio_P_high": 0.9693434775479859,
+  "rms": 0.5810438990592957,
+  "eul": [
+   1.0085262236374744,
+   0.8990640900674547,
+   0.8500318202346305
+  ]
+ },
+ "args": {
+  "steps": 3000,
+  "batch": 2,
+  "nc": 32,
+  "nf": 64,
+  "base_ckpt": "runs/R_reg_psc14_b48/model_ema.pt",
+  "lr": 0.0003,
+  "device": "cuda",
+  "out": "runs/RF48_resflow_psc14_set15",
+  "max_seconds": null,
+  "resume": false,
+  "seed": 0,
+  "data": "psc",
+  "train_seeds": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13
+  ],
+  "test_seeds": [
+   15
+  ],
+  "oracle_coarse": false,
+  "velocity_inputs": false,
+  "flow_base": 48,
+  "eval_only": "runs/RF48_resflow_psc14/model_ema.pt",
+  "cic_weight": 0.0,
+  "cic_compress": "log1p",
+  "cic_factor": 1,
+  "jac_weight": 0.0
+ }
+}
