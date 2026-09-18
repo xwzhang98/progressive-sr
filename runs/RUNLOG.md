@@ -2669,3 +2669,28 @@ bias signature). Provenance: runs/RFJ48_resflow_psc14/{results_resflow,vs_ref}.j
 Ledger at 0.9 k_Ny,64 (32->64, set14, emulator density / r_delta): control 0.805/0.906; shared24 0.853/0.907; jac1.2 0.860/0.908;
 48 0.892/0.915; 96 0.891/0.920; 48+jac1.2 (RFJ48) 0.945/0.915; shared48 0.900/0.929; oracle 0.874/0.967; truth-level 1.0/0.97.
 Provenance: runs/cap2_probe.log; runs/{R_reg_psc14_b96,RF96_resflow_psc14,M48_reg_psc,M48_resflow_psc,RF48_resflow_psc14_set15,VFJ48_resflow_psc14_set15}/.
+
+## 2026-09-18 09:40 — M48J (shared width-48 operator + jac 1.2): jac shifts the whole band up, it does not fix the tilt; data-tree incident fixed
+
+(1) runs/M48J_resflow_psc (`multi_resflow_train.py --mode resflow --base 48 --jac-weight 1.2`, frozen shared base runs/M48_reg_psc,
+split 0-13/14, HENON hold 1279890). Emulator (generative) density vs the converged reference, P/P at k_Ny,c/2 / 0.75 / 0.9 k_Ny,c:
+| shared width-48 operator | 32->64 vs native 128                              | 64->128 vs native 256                             |
+|--------------------------|---------------------------------------------------|---------------------------------------------------|
+| M48 (no jac)             | 0.999 / 0.937 / 0.900  r_delta 0.929 (gen 0.918)  | 1.036 / 0.939 / 0.830  r_delta 0.921 (gen 0.834)  |
+| M48J (jac 1.2)           | 1.018 / 0.968 / 0.937  r_delta 0.929 (gen 0.954)  | 1.124 / 1.046 / 0.924  r_delta 0.920 (gen 0.934)  |
+Lagrangian octave: 32->64 r 0.836 P/P 0.965 rms 0.312 (M48: 0.834 / 0.982 / 0.316); 64->128 r 0.725 P/P 0.917 rms 0.516
+(M48: 0.719 / 0.978 / 0.531); generative octave P/P 0.934 and 0.878.
+Reading: at 32->64 jac adds +0.02/+0.03/+0.04 (as for the specialist RFJ48); at 64->128 it lifts the whole band by a nearly
+UNIFORM +0.09..0.11, overshooting at k_Ny,64 (+12%) and 0.75 k_Ny,128 (+5%) while 0.9 k_Ny,128 is still -8%, and the bias
+signature is three times larger (Lagrangian octave P/P 0.978 -> 0.917; the J-loss is larger where multi-streaming is larger).
+The TILT of the density ratio across the band (about -0.2 from k_Ny,64 to 0.9 k_Ny,128 at 64->128, with or without jac) is
+untouched: jac sets the level, not the shape. A single jac weight shared across levels is too strong at 64->128; if used, it
+should be per level (~1.2 at 32->64, <= 0.4 at 64->128). Production candidate stays M48 (jac optional, per level).
+
+(2) Data-tree incident (found and fixed by the session). On 2026-09-16 20:59 the 128^3 IC conversion wrote 16 new directories
+`IC/{disp.npy,disp_meta.json}` INTO the owner's PSC tree (`cosmo_sr/2-data/train/int_redshift_same_cosmology/dmo-128/set*/`),
+because `data/psc/dmo-128/setK` were symlinks to those directories. Nothing was overwritten (the 128 level had no IC before);
+dmo-64/256/512 were never touched. Fix (2026-09-18 09:28): the 16 IC directories were moved (md5-verified) into the repo's own
+gitignored tree, `data/psc/dmo-128/setK/` is now a real directory holding `IC/` plus a `PART_009` symlink to the owner's run;
+the owner's set directories again contain only PART_009 (their directory mtimes now read 2026-09-18). All scripts keep the
+same paths. Rule for the future: per-level data under data/psc are real directories; only PART_009 is ever symlinked.
