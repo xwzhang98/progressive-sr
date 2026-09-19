@@ -2888,3 +2888,17 @@ told which it gets; the compromise damps both. A regime flag in the conditioning
 network separate them — a new conditioning input, i.e. an owner decision, not pursued without approval.
 Next (owner: "先1后2"): step 2, 256->512 with memory-mapped streaming. The octave precompute ran into the RM priority queue twice
 (1295964, 1298482 cancelled) and now runs on the idle HENON GPU (runs/precompute_octave512.log).
+
+## 2026-09-19 06:20 — C4 launched: shared width-48 operator on FOUR levels, 256->512 on memory-mapped (streamed) crops
+
+Octave precompute (runs/precompute_octave.py on the HENON GPU, ~23 s per set): data/psc/octave/dmo-512/set{0..15}.npy, 25 GB, rms
+148.43 kpc/h (the 256->512 IC octave x growth). Smoke tests (2 train sets): four-level base and resflow run with --stream-levels 256,
+peak GPU 22.9 GB, ~1.2 s/step averaged over the four levels (the streamed level is not slower than the others: mmap crop reads are
+~50 MB per step); s_l = 0.655 / 0.958 / 1.215 / 1.436; lambda at the smoke's first steps 0.0103 / 0.0075 / 0.0067 / 0.0052.
+Full-box 512^3 tiled inference (512 tiles per network pass): peak 31.3 GB, ~50 s per pass -> ~15 min per 8-Heun prediction; the
+chain evaluation is therefore restricted (`chain_shared.py --starts 64 128 256 --gen-starts 64 256`): emulator 512-level
+predictions from 256 (direct), 128 and 64 (the production chain 64->128->256->512); generative direct and from 64.
+512-level density is measured against the native 512 run itself (no 1024 run; eval_vs_ref --ref-level 512 --mesh 1024).
+`hpc/run_c4.sh`: C4a runs/M48d_reg_psc -> C4b runs/M48d_resflow_psc (split 0-13/14, 3000 steps per level, batches 2/1/1/1, crops
+0/0/128/128, halo 16, tile core 64) -> runs/chain_M48d_set{14,15} -> `hpc/slurm_eval_chain4.sh` on the hold allocation CPUs.
+Expected ~13 h. The no-FT three-level M48c remains the reference for 32->256.

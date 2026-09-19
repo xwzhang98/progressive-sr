@@ -55,6 +55,8 @@ def main():
     ap.add_argument("--levels", type=int, nargs="+", default=[32, 64, 128], help="coarse grids, each step doubles")
     ap.add_argument("--s-sets", type=int, nargs="+", default=[12, 13], help="sets whose fine ICs give sigma_c and the linear power")
     ap.add_argument("--modes", nargs="+", default=["emulator", "generative"])
+    ap.add_argument("--starts", type=int, nargs="*", default=None, help="start levels of the chains (default: every level)")
+    ap.add_argument("--gen-starts", type=int, nargs="*", default=None, help="start levels in generative mode (default: --starts)")
     ap.add_argument("--nsteps", type=int, default=8)
     ap.add_argument("--amp-from", type=int, default=0, help="bf16 autocast for steps with Nf >= this (0 = never)")
     ap.add_argument("--device", default="cuda")
@@ -114,7 +116,10 @@ def main():
     res = {"args": vars(args), "levels": [dict(Nc=lv["Nc"], s=lv["s"], s_meas=lv["s_meas"], zero_shot=lv["zero_shot"]) for lv in levels]}
     t0 = time.time()
     for mode in args.modes:
+        starts = args.starts if (mode == "emulator" or args.gen_starts is None) else args.gen_starts
         for i, lv0 in enumerate(levels):
+            if starts is not None and lv0["Nc"] not in starts:
+                continue
             coarse = lv0["te"]["dis_c"]                      # true coarse run at the start level
             for j in range(i, len(levels)):
                 lv = levels[j]
