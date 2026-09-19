@@ -31,3 +31,4 @@ data/
 runs/.claims/
 runs/**/*.err
 runs/*.out
+runs/.rs_*

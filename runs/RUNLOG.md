@@ -2829,7 +2829,7 @@ Findings:
    rollout distribution shift; RFT2 (RUNLOG 2026-09-15) showed rollout fine-tuning damps power without repairing phase — here
    power is exactly what is wrong, so a rollout-aware step is back on the table (ask-before item, owner's call).
 
-## 2026-09-19 09:30 — Owner: "先1后2，内存映射读取": (1) rollout-aware fine-tuning of the shared operator, then (2) 256->512 with mmap
+## 2026-09-19 01:40 — Owner: "先1后2，内存映射读取": (1) rollout-aware fine-tuning of the shared operator, then (2) 256->512 with mmap
 
 (1) `runs/rollout_shared.py` = the RFT2 protocol (owner's spec 2026-09-15) on the shared three-level M48c: frozen shared base and
 frozen upstream predictions cached once from M48c (emulator mode): pred64 (32->64 from true 32), pred128_64 (64->128 from true
