@@ -116,3 +116,46 @@ def check_augment_equivalence():
 
 if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "augment":
     check_augment_equivalence()
+
+
+def check_cropsource():
+    """4. tiling.CropSource == full-box Batcher.make(eta='true') + crop_periodic (128->256 level of set 14, CPU)."""
+    import octave_flow_toy as oft
+    torch.set_default_dtype(torch.float32)
+    DIS, IC = "data/psc/dmo-{N}/set{seed}/PART_009/disp.npy", "data/psc/dmo-{N}/set{seed}/IC/disp.npy"
+    sc = oft.Scaffold(128, 256, 100000.0, 0.5, 1.0, torch.device("cpu"), window="cube")
+    it = oft.load_real(DIS, IC, 128, 256, [14])[0]
+    b = oft.Batcher(sc, [], np.random.default_rng(0), augment_on=False, growth=76.7439, octave_transverse=True)
+    full = b.make([it], eta="true")
+    lin = sc.band(torch.from_numpy(np.asarray(it["ic_f"], dtype=np.float32)[None]) * 76.7439, "high")[0].numpy()
+    src = tiling.CropSource(sc, [it["dis_c"]], [it["dis_f"]], [lin])
+    for o in ((0, 0, 0), (200, 17, 250), (130, 255, 64)):
+        got = src.sample(0, o, 128)
+        errs = [float((g - tiling.crop_periodic(f, o, 128)).abs().max() / f.abs().max()) for g, f in zip(got, full)]
+        print(f"4  crop at {o}: max rel diff x0 {errs[0]:.1e}  x1 {errs[1]:.1e}  Pc {errs[2]:.1e}  D {errs[3]:.1e}")
+
+
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "cropsource":
+    check_cropsource()
+
+
+def check_jac():
+    """5. tiling.jac_adj_from_D(scaffold D channels) == eulerian_metric.jacobian_and_adjugate(Pc / h) (64->128, set 14, CPU)."""
+    import octave_flow_toy as oft
+    torch.set_default_dtype(torch.float32)
+    DIS, IC = "data/psc/dmo-{N}/set{seed}/PART_009/disp.npy", "data/psc/dmo-{N}/set{seed}/IC/disp.npy"
+    sc = oft.Scaffold(64, 128, 100000.0, 0.5, 1.0, torch.device("cpu"), window="cube")
+    it = oft.load_real(DIS, IC, 64, 128, [14])[0]
+    x0, x1, Pc, D = oft.Batcher(sc, [], np.random.default_rng(0), augment_on=False, growth=76.7439, octave_transverse=True).make([it], eta="true")
+    J1, adj1 = em.jacobian_and_adjugate(Pc)
+    J2, adj2 = tiling.jac_adj_from_D(D)
+    print(f"5  J max rel diff {float((J2 - J1).abs().max() / J1.abs().max()):.1e}, adj {float((adj2 - adj1).abs().max() / adj1.abs().max()):.1e}")
+    net = LocalNet().float()
+    xin = torch.randn(1, 12, 128, 128, 128)
+    with torch.no_grad():
+        e = float((tiling.TiledNet(net, 64, 32)(xin, None, None) - net(xin, None, None)).abs().max())
+    print(f"5  TiledNet (index_select tiles) vs full box, local net: max abs diff {e:.1e}")
+
+
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "jac":
+    check_jac()

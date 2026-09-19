@@ -9,6 +9,7 @@ centre, RUNLOG 2026-09-18 13:00). A level trained on crops must therefore be eva
   inference: TiledNet applies the network on C^3 tiles of the circularly padded full field and keeps each tile's
              central S^3 block, i.e. only voxels >= (C - S)/2 from the tile faces (choose (C - S)/2 >= H).
 """
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -52,12 +53,15 @@ class TiledNet(nn.Module):
         C, S = self.C, self.S
         m = (C - S) // 2
         assert N % S == 0, f"box side {N} is not a multiple of the tile core {S}"
-        xp = F.pad(x, (m, m, m, m, m, m), mode="circular")
+        # tiles are gathered with wrap-around indices (no padded copy of the full field: 9 GB at 512^3 with 12 channels)
+        idx = {a: (torch.arange(C, device=x.device) + a - m) % N for a in range(0, N, S)}
         out = None
         for a in range(0, N, S):
+            xa = x.index_select(2, idx[a])
             for b in range(0, N, S):
+                xab = xa.index_select(3, idx[b])
                 for c in range(0, N, S):
-                    y = self.net(xp[:, :, a:a + C, b:b + C, c:c + C], t, s)
+                    y = self.net(xab.index_select(4, idx[c]), t, s)
                     if out is None:
                         out = x.new_zeros((x.shape[0], y.shape[1], N, N, N), dtype=y.dtype)
                     out[:, :, a:a + S, b:b + S, c:c + S] = y[:, :, m:m + S, m:m + S, m:m + S]
@@ -89,3 +93,74 @@ def augment_crops(rng, vecs=(), tens=(), scals=()):
              for T in tens]
     out_s = [spatial(s_, 1).contiguous() for s_ in scals]
     return out_v, out_t, out_s
+
+
+def crop_memmap(a, o, C):
+    """Periodic C^3 crop starting at o of a (ch, N, N, N) array (typically an np.memmap), read with at most 8 basic-slice blocks
+    so that only the needed rows are touched on disk. Returns a new float32 ndarray (ch, C, C, C)."""
+    N = a.shape[-1]
+    segs = []
+    for oa in o:
+        oa = int(oa) % N
+        segs.append([(oa, oa + C)] if oa + C <= N else [(oa, N), (0, oa + C - N)])
+    xs = []
+    for (x0, x1) in segs[0]:
+        ys = []
+        for (y0, y1) in segs[1]:
+            zs = [np.asarray(a[:, x0:x1, y0:y1, z0:z1], dtype=np.float32) for (z0, z1) in segs[2]]
+            ys.append(np.concatenate(zs, axis=3))
+        xs.append(np.concatenate(ys, axis=2))
+    return np.concatenate(xs, axis=1)
+
+
+class CropSource:
+    """Training crops at a level whose full boxes are too large to prepare every step (256->512; owner 2026-09-19: memory-
+    mapped reading). Equivalent to scaffold Batcher.make(eta="true") on the full box followed by crop_periodic (checked in
+    checks/tiling_check.py crop), but: the coarse run is prolonged and differentiated on the full box ON THE DEVICE and each
+    of the 9 D_ij components is cropped as soon as it is formed; the fine target and the IC octave (precomputed once per set
+    by runs/precompute_octave.py, = scaffold.band(ic_f * growth, "high")) are memory-mapped and only the crop is read."""
+
+    def __init__(self, sc, dis_c, dis_f, lin):
+        self.sc, self.dis_c, self.dis_f, self.lin = sc, dis_c, dis_f, lin     # lists per training box
+
+    def sample(self, i, o, C):
+        sc = self.sc
+        dev = sc.fdev
+        dc = torch.from_numpy(np.ascontiguousarray(self.dis_c[i], dtype=np.float32)[None]).to(dev)
+        Pc_full = sc.prolong(dc).to(dev)                                    # (1, 3, N, N, N), physical units
+        Fx = torch.fft.rfftn(Pc_full, dim=(-3, -2, -1))
+        Pc = crop_periodic(Pc_full, o, C)
+        del Pc_full
+        Ds = []
+        for a in range(3):
+            for b in range(3):
+                g = torch.fft.irfftn(1j * sc.k[a] * Fx[:, b], s=(sc.Nf,) * 3, dim=(-3, -2, -1))
+                Ds.append(crop_periodic(g[:, None], o, C)[:, 0])
+                del g
+        del Fx
+        D = torch.stack(Ds, dim=1).to(sc.device)
+        lin = torch.from_numpy(crop_memmap(self.lin[i], o, C)[None]).to(sc.device)
+        df = torch.from_numpy(crop_memmap(self.dis_f[i], o, C)[None]).to(sc.device)
+        Pc = Pc.to(sc.device)
+        return (Pc + lin) / sc.hf, df / sc.hf, Pc / sc.hf, D
+
+
+def jac_adj_from_D(D9):
+    """J = det(A) and adj(A) with A = I + D, D9 (B, 9, ...) the scaffold's gradient channels (index 3 i + j = d_i Psi_j,
+    dimensionless) -- the same A, J and cofactor adjugate as eulerian_metric.jacobian_and_adjugate, but pointwise, so it can be
+    evaluated on a crop of full-box spectral gradients (checks/tiling_check.py jac). Returns J (B, ...) and adj (B, ..., 3, 3)."""
+    B = D9.shape[0]
+    a = D9.reshape(B, 3, 3, *D9.shape[2:]).movedim(1, -1).movedim(1, -1)          # (B, ..., 3, 3), a[..., i, j] = d_i Psi_j
+    a = a + torch.eye(3, device=D9.device, dtype=D9.dtype)
+    J = torch.linalg.det(a)
+    cof = torch.stack([
+        torch.stack([a[..., 1, 1] * a[..., 2, 2] - a[..., 1, 2] * a[..., 2, 1],
+                     a[..., 1, 2] * a[..., 2, 0] - a[..., 1, 0] * a[..., 2, 2],
+                     a[..., 1, 0] * a[..., 2, 1] - a[..., 1, 1] * a[..., 2, 0]], dim=-1),
+        torch.stack([a[..., 0, 2] * a[..., 2, 1] - a[..., 0, 1] * a[..., 2, 2],
+                     a[..., 0, 0] * a[..., 2, 2] - a[..., 0, 2] * a[..., 2, 0],
+                     a[..., 0, 1] * a[..., 2, 0] - a[..., 0, 0] * a[..., 2, 1]], dim=-1),
+        torch.stack([a[..., 0, 1] * a[..., 1, 2] - a[..., 0, 2] * a[..., 1, 1],
+                     a[..., 0, 2] * a[..., 1, 0] - a[..., 0, 0] * a[..., 1, 2],
+                     a[..., 0, 0] * a[..., 1, 1] - a[..., 0, 1] * a[..., 1, 0]], dim=-1)], dim=-2)
+    return J, cof.transpose(-1, -2)

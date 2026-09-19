@@ -67,6 +67,14 @@ def main():
                     help="per level: fine-grid crop side for training (0 = full box); owner approved patch cropping 2026-09-18")
     ap.add_argument("--halo", type=int, default=16, help="crop cells excluded from the loss on every face")
     ap.add_argument("--tile-core", type=int, default=64, help="inference at crop levels: tiles of the crop side, central core kept")
+    ap.add_argument("--stream-levels", type=int, nargs="*", default=[],
+                    help="coarse grids whose training data are STREAMED (tiling.CropSource: coarse run in RAM, fine target and the "
+                         "precomputed IC octave memory-mapped, only crops read; owner 2026-09-19 '内存映射读取'); must be crop levels")
+    ap.add_argument("--stream-ic-sets", type=int, nargs="*", default=None,
+                    help="sets whose ICs give the linear power and sigma_c at stream levels (default: the first two training sets)")
+    ap.add_argument("--octave-dir", default="data/psc/octave/dmo-{N}", help="precomputed IC octaves (runs/precompute_octave.py)")
+    ap.add_argument("--eval-skip-levels", type=int, nargs="*", default=None,
+                    help="coarse grids skipped by the end-of-training evaluation (default: the stream levels; use runs/chain_shared.py)")
     ap.add_argument("--data", type=str, default="psc", choices=sorted(DATASETS))
     ap.add_argument("--train-seeds", type=int, nargs="+", default=list(range(14)))
     ap.add_argument("--test-seeds", type=int, nargs="+", default=[14])
@@ -92,18 +100,33 @@ def main():
     for Nc, batch, C in zip(args.levels, args.batches, crops):
         Nf = 2 * Nc
         sc = oft.Scaffold(Nc, Nf, L, OFF, 1.0, dev, window="cube")
-        tr = oft.load_real(DIS, IC, Nc, Nf, args.train_seeds)
+        tr = oft.load_real(DIS, IC, Nc, Nf, args.train_seeds)          # p0.load memory-maps: nothing is read yet
         te = oft.load_real(DIS, IC, Nc, Nf, args.test_seeds[:1])
-        sc.fit_linear_power([it["ic_f"] * GR for it in tr])
         rng = np.random.default_rng(args.seed + Nc)
-        # crop levels: no numpy augmentation of full boxes (CPU-bound at 256^3); the crops are augmented on the GPU instead
-        ba = oft.Batcher(sc, tr, rng, augment_on=(C == 0), growth=GR, octave_transverse=True)
-        s_l = float(np.log(sigma_c([it["ic_f"] for it in tr], GR, Nc, L)))
+        src = None
+        if Nc in args.stream_levels:
+            assert C and batch == 1, "stream levels must be crop levels with batch 1"
+            for it in tr:
+                it["dis_c"] = np.array(it["dis_c"], dtype=np.float32)      # coarse runs in RAM (200 MB each at 256^3)
+            lin = [np.load(os.path.join(args.octave_dir.format(N=Nf), f"set{k}.npy"), mmap_mode="r") for k in args.train_seeds]
+            icsets = args.stream_ic_sets or args.train_seeds[:2]
+            ics = [p0.load(IC.replace("{seed}", str(k)), Nf) for k in icsets]
+            sc.fit_linear_power([ic * GR for ic in ics])
+            s_l = float(np.log(sigma_c(ics, GR, Nc, L)))
+            del ics
+            src = tiling.CropSource(sc, [it["dis_c"] for it in tr], [it["dis_f"] for it in tr], lin)
+            ba = oft.Batcher(sc, [], rng, augment_on=False, growth=GR, octave_transverse=True)   # only its rng is used
+        else:
+            sc.fit_linear_power([it["ic_f"] * GR for it in tr])
+            # crop levels: no numpy augmentation of full boxes (CPU-bound at 256^3); the crops are augmented on the GPU instead
+            ba = oft.Batcher(sc, tr, rng, augment_on=(C == 0), growth=GR, octave_transverse=True)
+            s_l = float(np.log(sigma_c([it["ic_f"] for it in tr], GR, Nc, L)))
         assert C == 0 or (C < Nf and C % 4 == 0 and C > 2 * args.halo and (C - args.tile_core) // 2 >= args.halo), f"bad crop {C}"
-        levels.append(dict(Nc=Nc, Nf=Nf, batch=batch, sc=sc, tr=tr, te=te, ba=ba, s=s_l, lam=None, crop=C,
+        levels.append(dict(Nc=Nc, Nf=Nf, batch=batch, sc=sc, tr=tr, te=te, ba=ba, s=s_l, lam=None, crop=C, src=src,
                            taper=tiling.taper(C, args.halo, sc.fdev) if C else None))
         print(f"level {Nc}->{Nf}: {len(tr)} train / {len(te)} test boxes, s_l = ln(sigma_c) = {s_l:.4f}"
-              + (f", CROPPED training {C}^3 (halo {args.halo}), tiled inference core {args.tile_core}" if C else ", full box"), flush=True)
+              + (f", CROPPED training {C}^3 (halo {args.halo}), tiled inference core {args.tile_core}" if C else ", full box")
+              + (f", STREAMED (mmap crops; linear power and s from sets {icsets})" if src is not None else ""), flush=True)
 
     baseM = None
     if args.mode != "base":
@@ -155,9 +178,17 @@ def main():
         for gstep in range(step0 + 1, total + 1):
             lv = levels[(gstep - 1) % nlev]
             sc, ba, B = lv["sc"], lv["ba"], lv["batch"]
-            x0, x1, Pc, D = ba.sample(B)
             C, H = lv["crop"], args.halo
-            if C:
+            if lv["src"] is not None:
+                # streamed level: prolongation and D_ij on the full box on the device, target and IC octave read as crops
+                i_ = int(ba.rng.integers(len(lv["tr"])))
+                o = [int(v_) for v_ in ba.rng.integers(0, lv["Nf"], size=3)]
+                x0, x1, Pc, D = lv["src"].sample(i_, o, C)
+                if args.mode != "base":
+                    Jc, adjc = tiling.jac_adj_from_D(D)            # pointwise: identical to cropping the full-box J/adj
+            else:
+                x0, x1, Pc, D = ba.sample(B)
+            if C and lv["src"] is None:
                 # all spectral operations were done on the full box inside ba.sample; the Q_J state (J, adj) too
                 if args.mode != "base":
                     with torch.no_grad():
@@ -170,6 +201,7 @@ def main():
                     adjc = tiling.crop_periodic(adjf.reshape(Bn, Nn, Nn, Nn, 9).permute(0, 4, 1, 2, 3), o, C)
                     adjc = adjc.permute(0, 2, 3, 4, 1).reshape(Bn, C, C, C, 3, 3)
                     del Jf, adjf
+            if C:
                 # cube-group augmentation of the crops (equivalent to augmenting the raw fields, checks/tiling_check.py 3)
                 Bn = x0.shape[0]
                 if args.mode != "base":
@@ -230,7 +262,11 @@ def main():
                    os.path.join(args.out, "model_ema.pt"))
 
     # ---- evaluation, per level (crop levels: tiled inference with the training crop geometry) --------------------
+    skip = args.eval_skip_levels if args.eval_skip_levels is not None else args.stream_levels
     for lv in levels:
+        if lv["Nc"] in skip:
+            print(f"[{lv['Nc']}to{lv['Nf']}] end-of-training evaluation skipped (evaluate with runs/chain_shared.py)", flush=True)
+            continue
         sc = lv["sc"]; tag = f"{lv['Nc']}to{lv['Nf']}"
         netM = tiling.TiledNet(model, lv["crop"], args.tile_core) if lv["crop"] else model
         netB = (tiling.TiledNet(baseM, lv["crop"], args.tile_core) if lv["crop"] else baseM) if baseM is not None else None

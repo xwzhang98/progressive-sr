@@ -45,9 +45,12 @@ def main():
     ap.add_argument("--fields", nargs="+", default=["truth", "base", "emulator", "generative"])
     ap.add_argument("--mesh", type=int, default=256, help="common analysis mesh (use 512 for 256^3 predictions vs native 512)")
     ap.add_argument("--tag", default=None, help="write vs_ref_<tag>.json instead of vs_ref.json")
+    ap.add_argument("--ref-level", type=int, default=None,
+                    help="grid of the reference run (default 2 nc; = nc when no higher-resolution run exists, e.g. 512)")
     args = ap.parse_args()
     pat, off = DATASETS[args.data]
-    nc, nf = args.nc, 2 * args.nc
+    nc = args.nc
+    nf = args.ref_level or 2 * nc
     kny = {n: np.pi * n / L_MPC for n in (nc // 2, nc)}
     probes = {f"kny{nc // 2}": kny[nc // 2], f"075kny{nc}": 0.75 * kny[nc], f"09kny{nc}": 0.9 * kny[nc]}
     sh = Shells(args.mesh)
