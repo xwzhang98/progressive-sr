@@ -2864,3 +2864,27 @@ r_delta falls slightly everywhere — the RFT2 signature again (power damping to
 levels. With equal Lagrangian octave power the density loss at the top means the tuned flow's detail is LESS matched to the coarse
 structure (hybrid-test mechanism, RUNLOG 2026-09-17 10:50). Even 32->64, which only ever saw native inputs, moved (-0.03): shared-
 weight drift. The mix0 control decides how much of this is mixing and how much is fine-tuning drift.
+
+## 2026-09-19 05:45 — RS_mix0 control: rollout-aware fine-tuning of the shared flow is power damping (RFT2 verdict, three levels)
+
+runs/RS_mix0 (same schedule, native inputs only; 03:41-04:21 on HENON after mix50) -> chains -> runs/evalchain_rs_mix0.log.
+Density at 0.9 k_Ny,c (P/P) and at the band's low probe (k_Ny,c/2), emulator; rows no-FT M48c / mix0 / mix50:
+| level / input       | set14 @0.9 k_Ny,c      | set15 @0.9 k_Ny,c      | set14 low probe        | set15 low probe        |
+|---------------------|------------------------|------------------------|------------------------|------------------------|
+| 32->64 direct       | .891 / .863 / .864     | .937 / .899 / .910     | .997 / .986 / .983     | 1.023 / 1.007 / 1.011  |
+| 64->128 direct      | .869 / .853 / .723     | .938 / .918 / .775     | 1.069 / 1.057 / .990   | 1.081 / 1.068 / 1.001  |
+| 128->256 direct     | .939 / .842 / .531     | .959 / .858 / .539     | 1.169 / 1.115 / .922   | 1.206 / 1.150 / .941   |
+| 128->256 from 64    | 1.041 / .878 / .466    | 1.147 / .957 / .493    | 1.312 / 1.215 / .934   | 1.411 / 1.303 / .989   |
+| 128->256 from 32    | .974 / .765 / .418     | 1.144 / .877 / .461    | 1.321 / 1.178 / .929   | 1.552 / 1.344 / 1.046  |
+r_delta at 0.9 k_Ny,256 direct: .905 / .906 / .892 (set14), .887 / .888 / .876 (set15). Generative mode tracks the emulator.
+Verdict (criteria of the RFT2 protocol): (i) the chained excess at the coarse Nyquist IS reduced, by mixing (mix0 -> mix50: -0.28 on
+set14 from 64) more than by drift (no-FT -> mix0: -0.10); (ii) but mixing pulls the WHOLE band down, strongest at the top: at
+0.9 k_Ny,256 (direct) drift -0.10 and mixing -0.31, i.e. ~3/4 of the loss is the mixing, the same split as RFT2 at one level;
+(iii) r_delta is unchanged or lower everywhere, no phase repair; (iv) 32->64 (native inputs only) drifts -0.03 in both arms.
+=> Rollout-aware fine-tuning trades the chained excess for a larger high-k deficit in direct AND chained use. NOT adopted; the
+no-FT three-level operator M48c remains the production candidate, with its chained excess (+0.1..+0.35 at k_Ny,128 into 256)
+recorded as a known limitation. Interpretation: one velocity field must serve native and model-generated inputs without being
+told which it gets; the compromise damps both. A regime flag in the conditioning (native vs generated coarse) would let the
+network separate them — a new conditioning input, i.e. an owner decision, not pursued without approval.
+Next (owner: "先1后2"): step 2, 256->512 with memory-mapped streaming. The octave precompute ran into the RM priority queue twice
+(1295964, 1298482 cancelled) and now runs on the idle HENON GPU (runs/precompute_octave512.log).

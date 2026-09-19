@@ -216,3 +216,13 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
   tiled inference at 512 = 512 tiles per network pass); (b) a rollout-aware step against the chained excess (ask-before);
   (c) the coarse-Nyquist excess.
 * GPU: HENON hold 1279890 renewed to 5 days on 2026-09-17 21:58 (hpc/slurm_hold_gpu.sh now requests 5 days).
+
+## 13. 2026-09-19 — step 1 (rollout-aware fine-tuning) closed negative; step 2 (256->512, mmap) in preparation
+
+* runs/rollout_shared.py = RFT2 protocol on the shared three-level flow. RS_mix50 removes the chained coarse-Nyquist excess but
+  damps the band everywhere (0.9 k_Ny,256 direct 0.94 -> 0.53); the RS_mix0 control shows ~1/4 of that is fine-tuning drift and
+  ~3/4 the mixing. Not adopted (RUNLOG 2026-09-19 05:45). Production candidate stays M48c (runs/M48c_{reg,resflow}_psc).
+* Step 2 tooling (commit a7d680e): tiling.CropSource / crop_memmap (exact vs full-box make + crop), pointwise J/adj from D,
+  index_select tiling (no padded copy), `multi_resflow_train.py --stream-levels 256 --octave-dir ...`, runs/precompute_octave.py
+  (IC octave per set, data/psc/octave/dmo-512/setK.npy, 1.6 GB each), eval_vs_ref --ref-level (512 vs native 512, mesh 1024).
+* data/psc/dmo-512 is now real per-set directories with read-only symlinks to the owner's PART_009 and IC.
