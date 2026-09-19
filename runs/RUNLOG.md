@@ -2828,3 +2828,16 @@ Findings:
    unmatched detail rather than the coarse run's Nyquist deficit), and the next step's correction does not undo it. This is the
    rollout distribution shift; RFT2 (RUNLOG 2026-09-15) showed rollout fine-tuning damps power without repairing phase — here
    power is exactly what is wrong, so a rollout-aware step is back on the table (ask-before item, owner's call).
+
+## 2026-09-19 09:30 — Owner: "先1后2，内存映射读取": (1) rollout-aware fine-tuning of the shared operator, then (2) 256->512 with mmap
+
+(1) `runs/rollout_shared.py` = the RFT2 protocol (owner's spec 2026-09-15) on the shared three-level M48c: frozen shared base and
+frozen upstream predictions cached once from M48c (emulator mode): pred64 (32->64 from true 32), pred128_64 (64->128 from true
+64), pred128_32 (two steps from true 32); ONLY the shared residual flow is tuned, warm-started from M48c_resflow_psc; lambda per
+level reused (0.0167 / 0.0124 / 0.0104); per step the coarse input is native with probability 1 - mix, else a cached prediction
+(64->128: pred64; 128->256: pred128_64 or pred128_32 50/50; 32->64 always native); base re-evaluated on the chosen coarse, target
+X - B; paired augmentation (numpy before make() at full-box levels, tiling.augment_crops at the crop level); 800 steps per level
+at 5e-5, EMA 0.99; crop level keeps C3's geometry. Smoke test (2 sets, mix 1.0): cache, mixing and crop path run.
+Arms (one training per GPU): RS_mix50 on HENON (1279890), RS_mix0 control on a TWIG A100 (owner allowed a second card), each
+followed by chain_shared on sets 14/15 and the density evaluation on its own allocation's CPUs (`hpc/run_rollout_shared.sh`).
+Rows: no-FT (M48c, RUNLOG 01:10) / mix0 / mix50.
