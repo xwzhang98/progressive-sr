@@ -2889,7 +2889,7 @@ network separate them — a new conditioning input, i.e. an owner decision, not 
 Next (owner: "先1后2"): step 2, 256->512 with memory-mapped streaming. The octave precompute ran into the RM priority queue twice
 (1295964, 1298482 cancelled) and now runs on the idle HENON GPU (runs/precompute_octave512.log).
 
-## 2026-09-19 06:20 — C4 launched: shared width-48 operator on FOUR levels, 256->512 on memory-mapped (streamed) crops
+## 2026-09-19 05:55 — C4 launched: shared width-48 operator on FOUR levels, 256->512 on memory-mapped (streamed) crops
 
 Octave precompute (runs/precompute_octave.py on the HENON GPU, ~23 s per set): data/psc/octave/dmo-512/set{0..15}.npy, 25 GB, rms
 148.43 kpc/h (the 256->512 IC octave x growth). Smoke tests (2 train sets): four-level base and resflow run with --stream-levels 256,
