@@ -198,3 +198,21 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
   (r_delta 0.915); best generative VFJ48 0.900 (r_delta 0.857). Oracle bound: density 0.874 / r_delta 0.967.
 * NEXT (owner's call): capacity dose-response (width 96 at 32->64; shared operator at width 48 for both levels),
   second box (set15) for RF48/VFJ48, then the chain. GPU: HENON hold 1216965 expires 2026-09-18 ~16:30.
+
+## 12. Cluster session 2026-09-18/19 — the chain reaches 256 (RUNLOG 2026-09-18 12:00 .. 2026-09-19 01:10)
+
+* Data layout rule (after the data-tree incident, RUNLOG 09:40): data/psc/dmo-{N}/setK are REAL directories in the repo holding
+  converted ICs; only PART_009 is symlinked to the owner's PSC tree. 128^3 and 256^3 ICs of all 16 sets are converted there.
+* Shared width-48 operator M48 (2 levels): the chain 32->64->128 is power-stable; zero-shot 128->256 keeps r_delta (0.905) but
+  overshoots the density by 70-85% (the flow adds only 2/3 of the octave power); no style-scalar value fixes it (s-scan).
+* Owner approved patch cropping (2026-09-18). `tiling.py` + `multi_resflow_train.py --crops 0 0 128 --halo 16 --tile-core 64`:
+  128->256 trained on 128^3 crops, tiled inference (GroupNorm makes crop and full-box outputs differ by 30-40%, so training and
+  inference must share the crop geometry; checks/tiling_check.py). GPU augmentation of the crops (CPU numpy augmentation of 256^3
+  boxes made training CPU-bound). ~0.77 s/step; base 2 h, flow 2.75 h.
+* Result M48c (3 levels, runs/M48c_{reg,resflow}_psc): 256-level density 1.17-1.21 / 1.05-1.08 / 0.94-0.96 at (k_Ny,128, 0.75,
+  0.9 k_Ny,256) with r_delta 0.905 / 0.887 (zero-shot 1.68-1.85 across the band); lower levels unchanged or slightly better.
+  Open: an excess at the coarse Nyquist growing with level (1.00 -> 1.08 -> 1.2), and chained inputs add +0.15..0.35 there.
+* NEXT (owner's call): (a) 256->512 on crops (512^3 full-box make() and J/adj need ~15 GB on the GPU: feasible but tight;
+  tiled inference at 512 = 512 tiles per network pass); (b) a rollout-aware step against the chained excess (ask-before);
+  (c) the coarse-Nyquist excess.
+* GPU: HENON hold 1279890 renewed to 5 days on 2026-09-17 21:58 (hpc/slurm_hold_gpu.sh now requests 5 days).

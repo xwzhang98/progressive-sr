@@ -2791,3 +2791,40 @@ augmentation of a 256^3 training sample costs 1.4 s. Crop levels now skip it and
 (`tiling.augment_crops`: vectors, rank-2 tensors D_ij and adj, scalar J), which is exactly equivalent because every scaffold
 operation commutes with the cube group (checks/tiling_check.py augment: max rel diff <= 7.7e-6 for x0, x1, Pc, D, J, adj over
 6 group elements = float32 FFT round-off). Full-box levels keep the numpy augmentation unchanged. First attempt deleted.
+
+## 2026-09-19 01:10 — C3 result: the three-level shared operator (128->256 trained on crops) fixes the 256-level density
+
+Runs (commit 5c2caf1; HENON hold 1279890): runs/M48c_reg_psc (17:00-18:58, 0.77 s/step) -> runs/M48c_resflow_psc (18:58-21:44;
+lambda 0.0167 / 0.0124 / 0.0104 for 32->64 / 64->128 / 128->256) -> runs/chain_M48c_set{14,15} (tiled inference at 128->256,
+~34 min per set) -> density vs the native 2c run (hpc/slurm_eval_chain.sh; the RM job 1291167 sat 2 h in the queue on priority
+(151 jobs pending) and was cancelled; the same script ran on the idle CPUs of the HENON hold allocation, runs/evalchain_c3_hold.log).
+Density P/P at (k_Ny,c/2, 0.75, 0.9 k_Ny,c) vs native 2c, r_delta at 0.9 k_Ny,c; emulator unless marked:
+| level / input                 | M48c set14                    | M48c set15                    | zero-shot M48 set14 / set15 (RUNLOG 12:00)    |
+|-------------------------------|-------------------------------|-------------------------------|-----------------------------------------------|
+| 32->64 direct                 | 0.997 / 0.927 / 0.891  r .924 | 1.023 / 0.969 / 0.937  r .939 | 0.999 / 0.937 / 0.900 r .929 ; .904 r .940     |
+| 64->128 direct                | 1.069 / 0.987 / 0.869  r .920 | 1.081 / 1.029 / 0.938  r .918 | 1.036 / 0.939 / 0.830 r .921 ; .881 r .924     |
+| 64->128 from 32               | 1.098 / 0.982 / 0.872  r .750 | 1.177 / 1.119 / 1.026  r .776 | 1.035 / 0.933 / 0.823 r .758 ; .884 r .788     |
+| 128->256 base                 | 2.366 / 3.364 / 4.001  r .890 | 2.529 / 3.629 / 4.340  r .863 | 2.416 / 3.346 / 3.919 ; 2.587 / 3.603 / 4.220  |
+| 128->256 direct               | 1.169 / 1.054 / 0.939  r .905 | 1.206 / 1.081 / 0.959  r .887 | 1.679 / 1.795 / 1.767 r .905 ; 1.784 / 1.890 / 1.848 r .884 |
+| 128->256 direct, generative   | 1.159 / 1.035 / 0.915  r .902 | 1.198 / 1.062 / 0.934  r .884 | 1.684 / 1.789 / 1.752 ; 1.790 / 1.882 / 1.828  |
+| 128->256 from 64              | 1.312 / 1.208 / 1.041  r .718 | 1.411 / 1.282 / 1.147  r .718 | 1.765 / 1.866 / 1.779 ; 1.922 / 1.989 / 1.936  |
+| 128->256 from 32              | 1.321 / 1.136 / 0.974  r .392 | 1.552 / 1.344 / 1.144  r .481 | 1.721 / 1.728 / 1.645 ; 1.840 / 1.857 / 1.736  |
+| 128->256 from 32, generative  | 1.221 / 1.058 / 0.898  r .232 | 1.540 / 1.299 / 1.086  r .330 | 1.660 / 1.675 / 1.549 ; 1.887 / 1.847 / 1.694  |
+(native 256 vs 512: 0.993 / 0.990 / 0.988, r .978 and 0.995 / 0.988 / 0.983, r .977.)
+Lagrangian octave (emulator): 32->64 r .826/.834 P/P .996/1.001; 64->128 .711/.716, .968/.971; 128->256 direct .590/.592,
+.927/.936 (zero-shot .633/.636, .666/.675); from 64 .486/.490, .895/.905; from 32 .429/.435, .871/.886.
+Findings:
+1. **Training the third level on crops works**: the 256-level density goes from +68..85% across the band (zero-shot) to
+   1.17-1.21 / 1.05-1.08 / 0.94-0.96 — the best top-of-band density at ANY level so far — with r_delta unchanged (0.905 / 0.887).
+   The trade-off is the usual one: octave power 0.67 -> 0.93 at the cost of octave r 0.63 -> 0.59.
+2. **Adding the third level does not hurt the others**: 32->64 within +-0.03 of M48, 64->128 slightly closer to 1 at the top
+   (0.87 / 0.94 vs 0.83 / 0.88). One weight-shared operator now covers 32->64->128->256 (5.85M + 5.85M parameters).
+3. **Residual problem 1 — an excess at the coarse Nyquist that grows with level**: at the band's low probe (k = k_Ny of the
+   coarse grid = half the fine Nyquist) the direct steps give 1.00/1.02 -> 1.07/1.08 -> 1.17/1.21 for 32->64 -> 64->128 -> 128->256. This is the correction band's edge, where the coarse run's own error is O(1) (Phase 0: P_eps/P_c
+   0.57-0.66 at 0.94 k_Ny,c).
+4. **Residual problem 2 — chained inputs add power at that edge**: into 256 from 64 / from 32 the low probe rises to 1.31-1.41 /
+   1.32-1.55 (direct 1.17-1.21), in both modes, more on set15. Unlike the chain into 128 on set14 (power-stable), the chain into
+   256 is not: the model's own output is a different kind of coarse input than a native run (its top band carries the flow's
+   unmatched detail rather than the coarse run's Nyquist deficit), and the next step's correction does not undo it. This is the
+   rollout distribution shift; RFT2 (RUNLOG 2026-09-15) showed rollout fine-tuning damps power without repairing phase — here
+   power is exactly what is wrong, so a rollout-aware step is back on the table (ask-before item, owner's call).
