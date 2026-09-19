@@ -1,0 +1,176 @@
+{
+ "args": {
+  "base_ckpt": "runs/M48c_reg_psc/model_ema.pt",
+  "flow_ckpt": "runs/RS_mix50/model_ema.pt",
+  "set": 15,
+  "levels": [
+   32,
+   64,
+   128
+  ],
+  "s_sets": [
+   12,
+   13
+  ],
+  "modes": [
+   "emulator",
+   "generative"
+  ],
+  "nsteps": 8,
+  "amp_from": 0,
+  "device": "cuda",
+  "out": "runs/chain_RS_mix50_set15"
+ },
+ "levels": [
+  {
+   "Nc": 32,
+   "s": 0.6552987673835567,
+   "s_meas": 0.6552425388460872,
+   "zero_shot": false
+  },
+  {
+   "Nc": 64,
+   "s": 0.9583594033203955,
+   "s_meas": 0.9583422193610237,
+   "zero_shot": false
+  },
+  {
+   "Nc": 128,
+   "s": 1.2151095151143818,
+   "s_meas": 1.215112674848789,
+   "zero_shot": false
+  }
+ ],
+ "emulator_from32_32to64": {
+  "r_low": 0.9848686896932596,
+  "r_high": 0.834228920151358,
+  "ratio_P_high": 0.9957745723779298,
+  "ratio_P_low": 0.9978743368500181,
+  "eps_rel_low": 0.03016946749168421,
+  "rms_err_over_h": 0.32198360562324524,
+  "rms_err_over_h_multistream": 0.3914690613746643,
+  "rms_err_over_h_singlestream": 0.28770217299461365,
+  "multistream_fraction": 0.29656982421875
+ },
+ "emulator_from32_64to128": {
+  "r_low": 0.9187980682773482,
+  "r_high": 0.6394000109798039,
+  "ratio_P_high": 0.9521530313363745,
+  "ratio_P_low": 0.9848221930133888,
+  "eps_rel_low": 0.16050711363985176,
+  "rms_err_over_h": 0.742495596408844,
+  "rms_err_over_h_multistream": 0.8294018507003784,
+  "rms_err_over_h_singlestream": 0.6847465634346008,
+  "multistream_fraction": 0.37630462646484375
+ },
+ "emulator_from32_128to256": {
+  "r_low": 0.8064756615296104,
+  "r_high": 0.4184301296240678,
+  "ratio_P_high": 0.8931963467886347,
+  "ratio_P_low": 0.9488207699417294,
+  "eps_rel_low": 0.3733815621938006,
+  "rms_err_over_h": 1.5506194829940796,
+  "rms_err_over_h_multistream": 1.6635303497314453,
+  "rms_err_over_h_singlestream": 1.4640203714370728,
+  "multistream_fraction": 0.41839170455932617
+ },
+ "emulator_from64_64to128": {
+  "r_low": 0.9657482877293511,
+  "r_high": 0.7086076227592492,
+  "ratio_P_high": 0.972668818483701,
+  "ratio_P_low": 0.9926048339579543,
+  "eps_rel_low": 0.06817057139582071,
+  "rms_err_over_h": 0.5677683353424072,
+  "rms_err_over_h_multistream": 0.6419526934623718,
+  "rms_err_over_h_singlestream": 0.5178948640823364,
+  "multistream_fraction": 0.37630462646484375
+ },
+ "emulator_from64_128to256": {
+  "r_low": 0.8627591384549335,
+  "r_high": 0.4706007238797157,
+  "ratio_P_high": 0.9128541145943131,
+  "ratio_P_low": 0.953933226488953,
+  "eps_rel_low": 0.2655223597837837,
+  "rms_err_over_h": 1.219761610031128,
+  "rms_err_over_h_multistream": 1.3166792392730713,
+  "rms_err_over_h_singlestream": 1.1449815034866333,
+  "multistream_fraction": 0.41839170455932617
+ },
+ "emulator_from128_128to256": {
+  "r_low": 0.9410272037630655,
+  "r_high": 0.5802441755514973,
+  "ratio_P_high": 0.9442132692084564,
+  "ratio_P_low": 0.9758010739706807,
+  "eps_rel_low": 0.1160904781168048,
+  "rms_err_over_h": 0.9122685790061951,
+  "rms_err_over_h_multistream": 0.991010308265686,
+  "rms_err_over_h_singlestream": 0.8511306047439575,
+  "multistream_fraction": 0.41839170455932617
+ },
+ "generative_from32_32to64": {
+  "r_low": 0.9559161595453071,
+  "r_high": 0.2090922763668056,
+  "ratio_P_high": 0.9453185549516439,
+  "ratio_P_low": 1.0108417552262927,
+  "eps_rel_low": 0.09105614859127562,
+  "rms_err_over_h": 0.5777437090873718,
+  "rms_err_over_h_multistream": 0.6352698802947998,
+  "rms_err_over_h_singlestream": 0.5516957640647888,
+  "multistream_fraction": 0.29656982421875
+ },
+ "generative_from32_64to128": {
+  "r_low": 0.6544687404355846,
+  "r_high": 0.028858799476321022,
+  "ratio_P_high": 0.9044832150598251,
+  "ratio_P_low": 1.0039612077144304,
+  "eps_rel_low": 0.6931632541240019,
+  "rms_err_over_h": 1.2863234281539917,
+  "rms_err_over_h_multistream": 1.3535784482955933,
+  "rms_err_over_h_singlestream": 1.2439876794815063,
+  "multistream_fraction": 0.37630462646484375
+ },
+ "generative_from32_128to256": {
+  "r_low": 0.3479188051091582,
+  "r_high": -0.00012173777333020131,
+  "ratio_P_high": 0.8620766613566425,
+  "ratio_P_low": 0.9554294327905063,
+  "eps_rel_low": 1.2626697582718638,
+  "rms_err_over_h": 2.6328506469726562,
+  "rms_err_over_h_multistream": 2.7213752269744873,
+  "rms_err_over_h_singlestream": 2.56728458404541,
+  "multistream_fraction": 0.41839170455932617
+ },
+ "generative_from64_64to128": {
+  "r_low": 0.9425092906726832,
+  "r_high": 0.2573574428699881,
+  "ratio_P_high": 0.9303067892195087,
+  "ratio_P_low": 0.9969360405821549,
+  "eps_rel_low": 0.11632685371805518,
+  "rms_err_over_h": 0.7818751335144043,
+  "rms_err_over_h_multistream": 0.8499290347099304,
+  "rms_err_over_h_singlestream": 0.7377853989601135,
+  "multistream_fraction": 0.37630462646484375
+ },
+ "generative_from64_128to256": {
+  "r_low": 0.6720069727533872,
+  "r_high": 0.03772875730919001,
+  "ratio_P_high": 0.8828826903989,
+  "ratio_P_low": 0.9565981318282356,
+  "eps_rel_low": 0.6342948093771493,
+  "rms_err_over_h": 1.6538286209106445,
+  "rms_err_over_h_multistream": 1.7404471635818481,
+  "rms_err_over_h_singlestream": 1.5886000394821167,
+  "multistream_fraction": 0.41839170455932617
+ },
+ "generative_from128_128to256": {
+  "r_low": 0.9284442460514735,
+  "r_high": 0.25367144501653704,
+  "ratio_P_high": 0.9230924584662636,
+  "ratio_P_low": 0.9769913655963669,
+  "eps_rel_low": 0.1416555012228087,
+  "rms_err_over_h": 1.0812596082687378,
+  "rms_err_over_h_multistream": 1.160110354423523,
+  "rms_err_over_h_singlestream": 1.0207765102386475,
+  "multistream_fraction": 0.41839170455932617
+ }
+}

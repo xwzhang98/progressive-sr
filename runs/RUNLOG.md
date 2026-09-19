@@ -2841,3 +2841,26 @@ at 5e-5, EMA 0.99; crop level keeps C3's geometry. Smoke test (2 sets, mix 1.0):
 Arms (one training per GPU): RS_mix50 on HENON (1279890), RS_mix0 control on a TWIG A100 (owner allowed a second card), each
 followed by chain_shared on sets 14/15 and the density evaluation on its own allocation's CPUs (`hpc/run_rollout_shared.sh`).
 Rows: no-FT (M48c, RUNLOG 01:10) / mix0 / mix50.
+
+## 2026-09-19 03:45 — RS_mix50 (rollout-aware fine-tune of the shared flow): the chained excess is gone, but power is damped hard
+
+runs/RS_mix50 (01:44-02:27, ~1.0 s/step, 800 steps per level at 5e-5; inputs per level 32: 800 native; 64: 402 native / 398 pred64;
+128: 415 native / 385 pred128) -> runs/chain_RS_mix50_set{14,15} -> runs/evalchain_rs_mix50.log (density on the hold allocation CPUs).
+TWIG hold 1295912 never left the priority queue; the mix0 control therefore runs after mix50 on HENON (dispatcher, 03:41).
+Density P/P at (k_Ny,c/2, 0.75, 0.9 k_Ny,c) vs native 2c, r_delta at 0.9 k_Ny,c, emulator:
+| level / input      | no-FT M48c set14       | RS_mix50 set14         | no-FT M48c set15       | RS_mix50 set15         |
+|--------------------|------------------------|------------------------|------------------------|------------------------|
+| 32->64 direct      | .997/.927/.891 r .924  | .983/.899/.864 r .924  | 1.023/.969/.937 r .939 | 1.011/.947/.910 r .935 |
+| 64->128 direct     | 1.069/.987/.869 r .920 | .990/.853/.723 r .909  | 1.081/1.029/.938 r .918 | 1.001/.892/.775 r .910 |
+| 64->128 from 32    | 1.098/.982/.872 r .750 | 1.000/.835/.708 r .731 | 1.177/1.119/1.026 r .776 | 1.062/.927/.799 r .754 |
+| 128->256 direct    | 1.169/1.054/.939 r .905 | .922/.675/.531 r .892 | 1.206/1.081/.959 r .887 | .941/.686/.539 r .876 |
+| 128->256 from 64   | 1.312/1.208/1.041 r .718 | .934/.639/.466 r .681 | 1.411/1.282/1.147 r .718 | .989/.664/.493 r .693 |
+| 128->256 from 32   | 1.321/1.136/.974 r .392 | .929/.583/.418 r .360 | 1.552/1.344/1.144 r .481 | 1.046/.660/.461 r .415 |
+Generative mode follows the emulator (e.g. 128->256 direct .905/.651/.506 set14). Lagrangian octave at 128->256 direct: r .579/.580,
+P/P .937/.944 (no-FT .590/.592, .927/.936): the displacement power is unchanged, the DENSITY power at high k is not.
+Reading (verdict pending the mix0 control, running): the coarse-Nyquist excess of chained inputs is removed (1.31-1.55 -> 0.93-1.05)
+but the whole band is pulled down, strongest at the top (0.94 -> 0.53 at 0.9 k_Ny,256 direct; 0.87 -> 0.72 at 0.9 k_Ny,128), and
+r_delta falls slightly everywhere — the RFT2 signature again (power damping toward the r^2 line, no phase repair), now at three
+levels. With equal Lagrangian octave power the density loss at the top means the tuned flow's detail is LESS matched to the coarse
+structure (hybrid-test mechanism, RUNLOG 2026-09-17 10:50). Even 32->64, which only ever saw native inputs, moved (-0.03): shared-
+weight drift. The mix0 control decides how much of this is mixing and how much is fine-tuning drift.
