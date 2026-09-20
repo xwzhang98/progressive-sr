@@ -1,0 +1,100 @@
+{
+ "s_l": 0.9583594033203955,
+ "lambda": 0.01254450622946024,
+ "mode": "resflow",
+ "args": {
+  "mode": "resflow",
+  "base_ckpt": "runs/M48d_reg_psc/model_ema.pt",
+  "steps": 3000,
+  "base": 48,
+  "lr": 0.0003,
+  "jac_p": 2.0,
+  "jac_eps": 0.1,
+  "jac_weight": 0.0,
+  "levels": [
+   32,
+   64,
+   128,
+   256
+  ],
+  "batches": [
+   2,
+   1,
+   1,
+   1
+  ],
+  "crops": [
+   0,
+   0,
+   128,
+   128
+  ],
+  "halo": 16,
+  "tile_core": 64,
+  "stream_levels": [
+   256
+  ],
+  "stream_ic_sets": null,
+  "octave_dir": "data/psc/octave/dmo-{N}",
+  "eval_skip_levels": [
+   128,
+   256
+  ],
+  "data": "psc",
+  "train_seeds": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13
+  ],
+  "test_seeds": [
+   14
+  ],
+  "device": "cuda",
+  "out": "runs/M48d_resflow_psc",
+  "max_seconds": null,
+  "resume": false,
+  "seed": 0,
+  "eval_only": null
+ },
+ "base": {
+  "r_high": 0.7495543586062634,
+  "ratio_P_high": 0.568977746749402,
+  "rms": 0.4730766713619232,
+  "eul": [
+   1.6707287199778578,
+   2.2741230868545634,
+   2.795540779946405
+  ]
+ },
+ "emulator": {
+  "r_high": 0.7036791503041079,
+  "ratio_P_high": 0.9492343410920673,
+  "rms": 0.5453636646270752,
+  "eul": [
+   1.1227322622424463,
+   1.0729510065700005,
+   0.9223076078915801
+  ]
+ },
+ "generative": {
+  "r_high": 0.2570156161358427,
+  "ratio_P_high": 0.9033376272009732,
+  "rms": 0.7545442581176758,
+  "eul": [
+   1.1351314293970163,
+   1.0826157500240774,
+   0.9252886542108373
+  ]
+ }
+}

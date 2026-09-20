@@ -226,3 +226,13 @@ optional: B trains from scratch; the laptop numbers above serve as the compariso
   index_select tiling (no padded copy), `multi_resflow_train.py --stream-levels 256 --octave-dir ...`, runs/precompute_octave.py
   (IC octave per set, data/psc/octave/dmo-512/setK.npy, 1.6 GB each), eval_vs_ref --ref-level (512 vs native 512, mesh 1024).
 * data/psc/dmo-512 is now real per-set directories with read-only symlinks to the owner's PART_009 and IC.
+
+## 14. 2026-09-19 — step 2 done: the chain reaches 512 (RUNLOG 21:05)
+
+* runs/M48d_{reg,resflow}_psc: ONE shared width-48 two-stage operator for 32->64, 64->128, 128->256 (crops) and 256->512
+  (memory-mapped streamed crops, data/psc/octave/dmo-512 precomputed octaves). Training 6.7 h, chains 7.5 h, density 1 h.
+* 256->512 direct: density 1.45/1.32/1.17 at (k_Ny,256, 0.75, 0.9 k_Ny,512) vs the native 512 run, r_delta 0.87 (generative
+  1.43/1.28/1.12, r 0.87). Production chain 64->128->256->512: 2.05/1.99/1.80, r_delta 0.39.
+* Trade-off found: the fourth level improves the top of the band at the lower levels (0.87 -> 0.97 at 64->128) but increases the
+  coarse-Nyquist excess and the chained excess. One velocity field for four levels is a compromise.
+* Next candidates (owner's call): level-specific adapters on the shared trunk; a regime flag for chained inputs; or accept.

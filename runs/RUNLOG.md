@@ -2902,3 +2902,40 @@ predictions from 256 (direct), 128 and 64 (the production chain 64->128->256->51
 `hpc/run_c4.sh`: C4a runs/M48d_reg_psc -> C4b runs/M48d_resflow_psc (split 0-13/14, 3000 steps per level, batches 2/1/1/1, crops
 0/0/128/128, halo 16, tile core 64) -> runs/chain_M48d_set{14,15} -> `hpc/slurm_eval_chain4.sh` on the hold allocation CPUs.
 Expected ~13 h. The no-FT three-level M48c remains the reference for 32->256.
+
+## 2026-09-19 21:05 — C4 result: the chain reaches 512, but one shared operator over four levels is a compromise
+
+Timings (HENON hold 1279890): base 05:55-08:50 (1.16 s/step), flow 08:50-12:37, chain set14 12:37-16:22, set15 16:22-20:07
+(tiled 512^3 inference, 512 tiles per network pass), density 20:07-21:02 (`hpc/slurm_eval_chain4.sh`, 1024^3 mesh at the 512 level).
+Models runs/M48d_{reg,resflow}_psc (levels 32/64/128/256, crops 0/0/128/128, 256->512 streamed; s_l 0.655/0.958/1.215/1.436;
+lambda 0.0172/0.0125/0.0104/0.0078). Density P/P at (k_Ny,c/2, 0.75, 0.9 k_Ny,c) and r_delta at 0.9 k_Ny,c, emulator; the
+256->512 level is measured against the native 512 run itself (no 1024 run exists), the others against the converged native 2c:
+| level / input        | M48d set14              | M48d set15              | M48c (3 levels) set14   | M48c set15              |
+|----------------------|-------------------------|-------------------------|-------------------------|-------------------------|
+| 64->128 direct       | 1.109/1.066/0.969 r .915| 1.120/1.096/1.030 r .914| 1.069/0.987/0.869 r .920| 1.081/1.029/0.938 r .918|
+| 128->256 direct      | 1.196/1.108/1.014 r .907| 1.253/1.158/1.056 r .888| 1.169/1.054/0.939 r .905| 1.206/1.081/0.959 r .887|
+| 128->256 from 64     | 1.385/1.335/1.201 r .709| 1.478/1.412/1.310 r .715| 1.312/1.208/1.041 r .718| 1.411/1.282/1.147 r .718|
+| 256->512 base        | 3.895/5.923/7.054 r .855| 3.995/5.894/7.068 r .830| —                       | —                       |
+| 256->512 direct      | 1.448/1.319/1.172 r .872| 1.450/1.313/1.183 r .854| —                       | —                       |
+| 256->512 from 128    | 1.869/1.892/1.747 r .685| 1.942/1.927/1.782 r .667| —                       | —                       |
+| 256->512 from 64     | 2.053/1.991/1.798 r .388| 2.219/2.216/2.023 r .373| —                       | —                       |
+Generative tracks the emulator: 256->512 direct 1.429/1.278/1.120 r .870 (set14), 1.431/1.272/1.129 r .851 (set15); from 64
+2.008/1.890/1.658 r .336 and 2.165/2.107/1.881 r .326. Lagrangian octave (set14, emulator): 64->128 direct r .704 P/P .949;
+128->256 direct .600/.910; 256->512 direct .509/.830, from 128 .367/.770, from 64 .296/.741; correction-band error P_eps/P
+.054 / .085 / .118 (direct) and .229 / .312 / .495 (chained).
+Findings:
+1. **The full chain now runs end to end**, 64 -> 128 -> 256 -> 512 with one operator (5.85M + 5.85M parameters for all levels),
+   trained with 256->512 on memory-mapped crops. A direct 256->512 step has r_delta 0.87 and a density excess of +17..45%.
+2. **The new level is not as well corrected as 256 was when it was added**: at its introduction the 128->256 level reached
+   1.17/1.05/0.94; the 256->512 level sits at 1.45/1.32/1.17. Its base is far more shrunk (density excess up to x7, octave
+   P/P 0.43), i.e. the conditional mean is much weaker at this level, and the flow does not close the gap.
+3. **Adding the fourth level moved the other levels**: the top of the band improved (64->128 0.87 -> 0.97, 128->256 0.94 -> 1.01
+   at 0.9 k_Ny,c) while the coarse-Nyquist excess grew (1.07 -> 1.11, 1.17 -> 1.20) and the chained cases got worse
+   (128->256 from 64: 1.04 -> 1.20 at the top). One shared velocity field across four levels is a compromise: the hardest level
+   pulls the others toward more added power.
+4. **The chain's excess accumulates**: 512-level density from 64 is 1.8-2.0 across the band with r_delta 0.37-0.39 (two steps of
+   upstream error), versus 1.17 and r 0.87 for the direct step. The per-step mechanism is the known one (RUNLOG 2026-09-19 01:10):
+   the model's own output is a different kind of coarse input than a native run, and the next step's correction over-corrects it.
+Open options (owner's call): (a) level-specific adapters/heads on the shared trunk (small per-level parameters) so that four
+levels stop compromising; (b) the regime flag for chained inputs (rollout mixing alone was negative, RUNLOG 05:45); (c) accept the
+current operator for direct steps and report the chain as a known limitation.

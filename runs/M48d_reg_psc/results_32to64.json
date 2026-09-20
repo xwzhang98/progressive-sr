@@ -1,0 +1,100 @@
+{
+ "s_l": 0.6552987673835567,
+ "lambda": null,
+ "mode": "base",
+ "args": {
+  "mode": "base",
+  "base_ckpt": null,
+  "steps": 3000,
+  "base": 48,
+  "lr": 0.0003,
+  "jac_p": 2.0,
+  "jac_eps": 0.1,
+  "jac_weight": 0.0,
+  "levels": [
+   32,
+   64,
+   128,
+   256
+  ],
+  "batches": [
+   2,
+   1,
+   1,
+   1
+  ],
+  "crops": [
+   0,
+   0,
+   128,
+   128
+  ],
+  "halo": 16,
+  "tile_core": 64,
+  "stream_levels": [
+   256
+  ],
+  "stream_ic_sets": null,
+  "octave_dir": "data/psc/octave/dmo-{N}",
+  "eval_skip_levels": [
+   128,
+   256
+  ],
+  "data": "psc",
+  "train_seeds": [
+   0,
+   1,
+   2,
+   3,
+   4,
+   5,
+   6,
+   7,
+   8,
+   9,
+   10,
+   11,
+   12,
+   13
+  ],
+  "test_seeds": [
+   14
+  ],
+  "device": "cuda",
+  "out": "runs/M48d_reg_psc",
+  "max_seconds": null,
+  "resume": false,
+  "seed": 0,
+  "eval_only": null
+ },
+ "base": {
+  "r_high": 0.5457521691243241,
+  "ratio_P_high": 1.5188072374152466,
+  "rms": 0.5870488882064819,
+  "eul": [
+   0.43848972473438785,
+   0.16360136586731885,
+   0.06009057016331446
+  ]
+ },
+ "emulator": {
+  "r_high": 0.8447701628740136,
+  "ratio_P_high": 0.7133981262978728,
+  "rms": 0.2973659634590149,
+  "eul": [
+   1.229212913876142,
+   1.3816357585598849,
+   1.572384031432001
+  ]
+ },
+ "generative": {
+  "r_high": 0.22342795404245577,
+  "ratio_P_high": 0.6821314294116713,
+  "rms": 0.5177170038223267,
+  "eul": [
+   1.22455544316197,
+   1.34563046574605,
+   1.5102430677533154
+  ]
+ }
+}
